@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Agent</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot" id="statusDot"></span><span id="agentName">Agent</span></div>
+    <label class="toggle"><input type="checkbox" id="wakeToggle"> <span id="wakeLabel">"Hey Agent" sunte raho</span></label>
+  </header>
+
+  <main id="chat" aria-live="polite">
+    <div class="msg bot">Namaste! Mic dabao ya wake word bolo, phir jo kaam hai bata do.</div>
+  </main>
+
+  <div id="confirmBar" class="confirm hidden">
+    <span id="confirmText"></span>
+    <button id="yesBtn" class="yes">Haan</button>
+    <button id="noBtn" class="no">Na</button>
+  </div>
+
+  <footer>
+    <form id="form">
+      <input id="text" autocomplete="off" placeholder="Type karo ya mic dabao…">
+      <button type="button" id="micBtn" class="mic" title="Bolo">🎤</button>
+      <button type="submit" class="send">Send</button>
+    </form>
+    <div class="status" id="status">Ready</div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
