@@ -16,17 +16,33 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from .memory_tools import pop_due_reminders  # noqa: E402
+from .whatsapp_tools import pop_notices, start_scheduler  # noqa: E402
 
 app = FastAPI(title="My_Agent")
+start_scheduler()
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 _agent = None
+
+
+def google_connected() -> bool:
+    from .google_tools import is_connected
+    return is_connected()
+
+
+def demo_mode() -> bool:
+    key = os.getenv("GEMINI_API_KEY", "")
+    return os.getenv("DEMO_MODE") == "1" or not key or key == "paste_your_key_here"
 
 
 def agent():
     global _agent
     if _agent is None:
         from .agent import Agent
+        if demo_mode():
+            from .demo_agent import DemoAgent
+            _agent = DemoAgent()
+            return _agent
         try:
             _agent = Agent()
         except RuntimeError as e:
@@ -57,7 +73,9 @@ def config():
         "user_name": os.getenv("USER_NAME", "Om"),
         "recognition_lang": os.getenv("RECOGNITION_LANG", "en-IN"),
         "voice_lang": os.getenv("VOICE_LANG", "en-IN"),
-        "has_key": bool(os.getenv("GEMINI_API_KEY")),
+        "has_key": not demo_mode(),
+        "demo": demo_mode(),
+        "google_connected": google_connected(),
     }
 
 
@@ -81,4 +99,4 @@ def reset(body: ConfirmIn):
 
 @app.get("/api/reminders/due")
 def due():
-    return {"due": pop_due_reminders()}
+    return {"due": pop_due_reminders(), "notices": pop_notices()}

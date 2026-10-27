@@ -2,15 +2,20 @@
 
 import os
 from datetime import datetime
+from pathlib import Path
 
 from google import genai
 from google.genai import types
 
+from .google_tools import GOOGLE_NEEDS_CONFIRMATION, GOOGLE_TOOLS, is_connected, tz
 from .memory_tools import MEMORY_TOOLS, get_facts
-from .pc_tools import NEEDS_CONFIRMATION, PC_TOOLS
+from .pc_tools import NEEDS_CONFIRMATION as PC_NEEDS_CONFIRMATION, PC_TOOLS
+from .contacts_tools import CONTACT_TOOLS
 from .web_tools import WEB_TOOLS
+from .whatsapp_tools import WHATSAPP_NEEDS_CONFIRMATION, WHATSAPP_TOOLS
 
-ALL_TOOLS = PC_TOOLS + WEB_TOOLS + MEMORY_TOOLS
+ALL_TOOLS = PC_TOOLS + WEB_TOOLS + MEMORY_TOOLS + GOOGLE_TOOLS + CONTACT_TOOLS + WHATSAPP_TOOLS
+NEEDS_CONFIRMATION = PC_NEEDS_CONFIRMATION | GOOGLE_NEEDS_CONFIRMATION | WHATSAPP_NEEDS_CONFIRMATION
 TOOL_MAP = {f.__name__: f for f in ALL_TOOLS}
 MAX_STEPS = 8
 MAX_HISTORY = 40
@@ -33,14 +38,31 @@ Kaam karne ka tarika:
 - Ek request mein kai steps ho sakte hain (jaise file dhundh kar kholna) - sab tools ek ke baad ek chalao.
 - Agar koi tool kaam ka nahi hai, to jo jaante ho us se madad karo ya batao ki ye abhi possible nahi hai.
 - Kabhi mat bolo ki kaam ho gaya jab tool ne error diya ho.
-- Gmail/Calendar abhi connected nahi hain (Phase 2). Unke liye open_website('gmail' / 'calendar') use karo.
+{google_rules()}
+- WhatsApp: user ke apne number se whatsapp_send / whatsapp_send_file. Naam diya ho to seedha naam pass karo
+  (agent saved contacts, Google Contacts aur WhatsApp chat list mein dhundh lega). Message user ki baat se
+  likho, user ki tarah (first person), chhota aur natural. File bhejni ho to pehle search_files se path lo.
+  "Raat 12 baje bhejna" jaisa ho to whatsapp_schedule. Kisi ka number user bataye to save_contact karo.
 - Agar user koi permanent baat bataye (pasand, log, details), remember_fact se save karo.
 
-Abhi ka time: {datetime.now():%A, %d %B %Y, %I:%M %p}
+Abhi ka time: {datetime.now(tz()):%A, %d %B %Y, %I:%M %p} ({tz()}). "Kal", "parso", "next Monday" isi se calculate karo.
 
 {USER_NAME} ke baare mein yaad rakhi baatein:
 {facts_txt}
 """
+
+
+def google_rules() -> str:
+    if not is_connected():
+        return ("- Gmail/Calendar abhi connected nahi hain. Agar user maange to batao ki README ke Phase 2 steps se "
+                "setup_google.bat chalana hai; tab tak open_website('gmail' / 'calendar') use karo.")
+    return """- Gmail aur Google Calendar connected hain.
+- Mail padhte waqt sirf zaroori baat chhote mein batao (kisne bheja, kya chahiye).
+- Email address kabhi guess mat karo. Sirf naam pata ho to find_email_address chalao, na mile to user se poochho.
+- Mail likhna ho to default gmail_create_draft. gmail_send sirf tab jab user saaf bole 'bhej do/send karo'.
+  Bhejne se pehle subject aur body user ki baat se likho, professional aur chhota.
+- Event badalna/cancel karna ho to pehle calendar_list_events se sahi event_id lo.
+- Meeting add karte waqt agar time nahi bataya to poochho; duration nahi bataya to 60 minute maano."""
 
 
 class Agent:
@@ -106,7 +128,7 @@ class Agent:
             return f"Unknown tool {call.name}"
         try:
             return str(fn(**dict(call.args or {})))
-        except Exception as e:  # report errors back to the model instead of crashing
+        except (Exception, SystemExit) as e:  # report errors back to the model instead of crashing
             return f"Error: {e}"
 
     def _run_calls(self, s: dict, p: dict):
@@ -178,4 +200,10 @@ def describe(name: str, args: dict) -> str:
         "lock_screen": "screen lock karni hai",
         "type_text": f"ye type karna hai: \"{str(args.get('text', ''))[:80]}\"",
         "press_keys": f"{args.get('keys')} dabana hai",
+        "gmail_send": f"{args.get('to')} ko mail bhejna hai, subject \"{args.get('subject')}\"",
+        "calendar_update_event": "calendar event badalna hai" + (f" to {args.get('new_start')}" if args.get("new_start") else ""),
+        "calendar_delete_event": "calendar event cancel karna hai",
+        "whatsapp_send": f"{args.get('to')} ko WhatsApp: \"{str(args.get('message', ''))[:120]}\"",
+        "whatsapp_send_file": f"{args.get('to')} ko WhatsApp par file {Path(str(args.get('file_path', ''))).name} bhejni hai",
+        "whatsapp_schedule": f"{args.get('at_time')} par {args.get('to')} ko WhatsApp: \"{str(args.get('message', ''))[:100]}\"",
     }.get(name, f"{name} chalana hai")

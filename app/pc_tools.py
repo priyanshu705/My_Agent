@@ -204,12 +204,12 @@ def mute_volume(mute: bool = True) -> str:
 def take_screenshot() -> str:
     """Take a screenshot of the PC screen and save it in Pictures/MyAgent Screenshots."""
     try:
-        import pyautogui
+        from PIL import ImageGrab
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         path = SCREENSHOT_DIR / f"screenshot_{datetime.now():%Y%m%d_%H%M%S}.png"
-        pyautogui.screenshot(str(path))
+        ImageGrab.grab().save(path)
         return f"Screenshot save ho gaya: {path}"
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         return f"Screenshot nahi le paaya: {e}"
 
 
@@ -248,7 +248,7 @@ def type_text(text: str) -> str:
         pyperclip.copy(text)
         pyautogui.hotkey("ctrl", "v")
         return "Text type kar diya."
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         return f"Type nahi ho paaya: {e}"
 
 
@@ -264,7 +264,7 @@ def press_keys(keys: str) -> str:
         time.sleep(1)
         pyautogui.hotkey(*combo)
         return f"{keys} daba diya."
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         return f"Keys nahi daba paaya: {e}"
 
 
