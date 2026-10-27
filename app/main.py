@@ -1,5 +1,5 @@
 """Local server: serves the web UI and runs the agent. Start with run.bat or:
-    python -m uvicorn app.main:app --port 8000
+python -m uvicorn app.main:app --port 8000
 """
 
 import os
@@ -15,10 +15,13 @@ from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from . import dashboard  # noqa: E402
 from .memory_tools import pop_due_reminders  # noqa: E402
 from .whatsapp_tools import pop_notices, start_scheduler  # noqa: E402
 
 app = FastAPI(title="My_Agent")
+app.middleware("http")(dashboard.guard)  # PC is always allowed; phones need ACCESS_PIN
+app.include_router(dashboard.router)
 start_scheduler()
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
@@ -42,11 +45,12 @@ def agent():
         if demo_mode():
             from .demo_agent import DemoAgent
             _agent = DemoAgent()
-            return _agent
-        try:
-            _agent = Agent()
-        except RuntimeError as e:
-            raise HTTPException(500, str(e))
+        else:
+            try:
+                _agent = Agent()
+            except RuntimeError as e:
+                raise HTTPException(500, str(e))
+        dashboard.install_activity_hook(_agent)
     return _agent
 
 
@@ -76,19 +80,25 @@ def config():
         "has_key": not demo_mode(),
         "demo": demo_mode(),
         "google_connected": google_connected(),
+        "phone_url": f"http://{dashboard.lan_ip()}:8000" if os.getenv("ACCESS_PIN") else "",
     }
 
 
 @app.post("/api/chat")
 def chat(body: ChatIn):
-    if not body.text.strip():
+    text = body.text.strip()
+    if not text:
         return {"reply": "Kuch suna nahi, phir se bolo?", "actions": []}
-    return agent().chat(body.session_id, body.text.strip())
+    result = agent().chat(body.session_id, text)
+    dashboard.record(body.session_id, text, result)
+    return result
 
 
 @app.post("/api/confirm")
 def confirm(body: ConfirmIn):
-    return agent().confirm(body.session_id, body.approved)
+    result = agent().confirm(body.session_id, body.approved)
+    dashboard.record(body.session_id, "Haan" if body.approved else "Na", result)
+    return result
 
 
 @app.post("/api/reset")
