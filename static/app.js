@@ -51,7 +51,10 @@ function speak(text) {
     const v = pickVoice();
     if (v) { u.voice = v; u.lang = v.lang; }
     u.rate = 1.05;
-    u.onend = u.onerror = () => { speaking = false; resolve(); };
+    let done = false;
+    const finish = () => { if (!done) { done = true; speaking = false; resolve(); } };
+    u.onend = u.onerror = finish;
+    setTimeout(finish, 2500 + text.length * 90);   // safety net if the browser never fires onend
     speechSynthesis.speak(u);
   });
 }
@@ -178,6 +181,10 @@ async function pollReminders() {
       if (Notification.permission === "granted") new Notification("Reminder", { body: text });
       await speak("Reminder: " + text);
     }
+    for (const text of r.notices || []) {
+      add(text, "bot");
+      await speak(text);
+    }
   } catch (e) {}
 }
 
@@ -197,7 +204,12 @@ $("wakeToggle").addEventListener("change", (e) => {
   $("agentName").textContent = cfg.agent_name;
   $("wakeLabel").textContent = `"${cfg.wake_word}" sunte raho`;
   document.title = cfg.agent_name;
-  if (cfg.has_key === false) add("GEMINI_API_KEY nahi mili. .env file mein key daalo aur server restart karo.", "bot");
+  $("agentName").title = cfg.google_connected ? "Gmail + Calendar connected" : "Gmail/Calendar not connected";
+  if (cfg.google_connected) $("agentName").textContent += " · Gmail ✓";
+  if (cfg.demo) {
+    $("agentName").textContent += " · Demo mode";
+    add("Demo mode: Gemini key nahi mili, isliye simple offline brain chal raha hai. Asli AI ke liye .env mein GEMINI_API_KEY daalo aur server restart karo.", "bot");
+  }
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
   let saved = "0";
   try { saved = localStorage.getItem("wakeMode") || "0"; } catch (e) {}
