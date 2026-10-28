@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050912">
+<title>My Agent</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- LEFT: chats -->
+  <aside id="left" class="drawer" aria-label="Chats">
+    <div class="drawer-head">
+      <div class="logo"><span class="logo-orb"></span><b id="brandName">Agent</b></div>
+      <button class="icon ghost only-mobile" data-close="left" aria-label="Band karo">✕</button>
+    </div>
+    <button id="newChat" class="primary wide">+ Nayi chat</button>
+    <div class="section-title">Purani chats</div>
+    <ul id="sessionList" class="session-list"></ul>
+    <div class="drawer-foot">
+      <button id="openSettings" class="ghost wide">⚙ Settings</button>
+    </div>
+  </aside>
+
+  <!-- CENTER: conversation -->
+  <section id="center">
+    <header id="topbar">
+      <button class="icon ghost only-mobile" id="menuLeft" aria-label="Chats">☰</button>
+      <div class="brand">
+        <span class="dot" id="statusDot"></span>
+        <span id="agentName">Agent</span>
+        <span id="badges"></span>
+        <span id="conn" class="badge hidden"></span>
+      </div>
+      <label class="toggle" id="wakeWrap" title="Hamesha wake word sunta rahe">
+        <input type="checkbox" id="wakeToggle">
+        <span class="switch"></span>
+        <span id="wakeLabel" class="hide-small">"Hey Agent" sunte raho</span>
+      </label>
+      <button class="icon ghost only-mobile" id="menuRight" aria-label="Dashboard">▦</button>
+    </header>
+
+    <div id="stage">
+      <div id="orb" class="idle" aria-hidden="true">
+        <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span>
+        <span class="core"></span>
+      </div>
+      <canvas id="wave" width="640" height="56"></canvas>
+      <div id="stateText" class="state-text">Ready</div>
+    </div>
+
+    <main id="chat" aria-live="polite"></main>
+
+    <div id="activity" class="activity hidden"><span class="spinner"></span><span id="activityText"></span></div>
+
+    <footer id="composer">
+      <form id="form" autocomplete="off">
+        <button type="button" id="micBtn" class="mic" title="Bolo" aria-label="Mic">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <input id="text" placeholder="Type karo ya mic dabao…" enterkeyhint="send">
+        <button type="submit" class="send" aria-label="Send">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
+        </button>
+      </form>
+      <div id="voiceNote" class="voice-note hidden">Phone par mic band hai (HTTPS chahiye). Type karo, ya keyboard ka mic use karo.</div>
+    </footer>
+  </section>
+
+  <!-- RIGHT: dashboard -->
+  <aside id="right" class="drawer" aria-label="Dashboard">
+    <div class="drawer-head">
+      <div class="logo"><b>Dashboard</b></div>
+      <button class="icon ghost only-mobile" data-close="right" aria-label="Band karo">✕</button>
+    </div>
+
+    <div class="cards">
+      <section class="card">
+        <h3>Status</h3>
+        <div id="statusChips" class="chips"></div>
+      </section>
+
+      <section class="card">
+        <h3>Reminders</h3>
+        <ul id="remList" class="list"></ul>
+        <form class="inline" id="remForm">
+          <input id="remText" placeholder="Kya yaad dilana hai?">
+          <input id="remMin" type="number" min="1" value="10" title="Minutes baad">
+          <button class="small">+</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h3>Calendar <small>agle 3 din</small></h3>
+        <ul id="calList" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h3>Unread mail</h3>
+        <ul id="mailList" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h3>To-do</h3>
+        <ul id="todoList" class="list"></ul>
+        <form class="inline" id="todoForm">
+          <input id="todoText" placeholder="Naya kaam…">
+          <button class="small">+</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h3>Notes</h3>
+        <ul id="noteList" class="list"></ul>
+        <form class="inline" id="noteForm">
+          <input id="noteText" placeholder="Note likho…">
+          <button class="small">+</button>
+        </form>
+      </section>
+    </div>
+  </aside>
+</div>
+
+<div id="scrim" class="scrim hidden"></div>
+
+<!-- Settings -->
+<div id="settings" class="modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
+  <div class="modal-box">
+    <div class="drawer-head"><b>Settings</b><button class="icon ghost" id="closeSettings" aria-label="Band karo">✕</button></div>
+
+    <label class="row"><span>Wake word</span><input id="setWake" placeholder="hey agent"></label>
+    <label class="row"><span>Agent ka naam</span><input id="setName" placeholder="Agent"></label>
+    <label class="row"><span>Awaaz (voice)</span><select id="setVoice"></select></label>
+    <label class="row"><span>Bolne ki speed <em id="rateVal">1.05</em></span><input id="setRate" type="range" min="0.7" max="1.5" step="0.05"></label>
+    <label class="row check"><span>Jawab bolkar sunao</span><input id="setSpeak" type="checkbox"></label>
+    <label class="row check"><span>Tool activity dikhao</span><input id="setActions" type="checkbox"></label>
+    <label class="row check"><span>Live mic waveform (experimental)</span><input id="setLive" type="checkbox"></label>
+    <label class="row check"><span>Animations kam karo</span><input id="setReduce" type="checkbox"></label>
+
+    <div class="row"><span>Accent</span>
+      <div class="swatches" id="swatches">
+        <button type="button" data-accent="cyan" style="--c:#19d3ff" aria-label="Cyan"></button>
+        <button type="button" data-accent="violet" style="--c:#8f6bff" aria-label="Violet"></button>
+        <button type="button" data-accent="green" style="--c:#2fe3a0" aria-label="Green"></button>
+        <button type="button" data-accent="amber" style="--c:#ffb547" aria-label="Amber"></button>
+      </div>
+    </div>
+
+    <div id="pcRow" class="row hidden"><span id="pcInfo">PC agent</span><span class="btns"><button id="pcConnectBtn" class="small" type="button">PC jodo</button><button id="pcRemoveBtn" class="small hidden" type="button">Hatao</button></span></div>
+    <div id="disconnectRow" class="row hidden"><span id="disconnectLabel">Is browser ko PC se hatao</span><button id="disconnectBtn" class="small" type="button">Disconnect</button></div>
+
+    <div class="phone-box">
+      <b>Phone par kholo</b>
+      <p id="phoneInfo">ACCESS_PIN set karo .env mein, phir run_online.bat (internet) ya run_phone.bat (same Wi-Fi) se start karo.</p>
+      <div id="phoneRow" class="inline hidden"><input id="phoneUrl" readonly><button class="small" id="copyUrl" type="button">Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="connect" class="modal hidden" role="dialog" aria-modal="true" aria-label="PC se connect karo">
+  <div class="modal-box">
+    <b id="cTitle">Apne PC se connect karo</b>
+    <p class="muted" id="cHelp">PC par run_online.bat chalao. Wahan jo link dikhe use yahan paste karo, phir PIN daalo.</p>
+    <label class="row" id="cUrlRow"><span>PC ka address</span><input id="cUrl" placeholder="https://xxxx.trycloudflare.com" autocapitalize="off" autocorrect="off"></label>
+    <label class="row"><span>PIN</span><input id="cPin" type="password" autocomplete="current-password"></label>
+    <div id="cErr" class="cerr"></div>
+    <button id="cGo" class="primary" type="button">Connect</button>
+    <button id="cDemo" class="ghost" type="button">Bina PC ke demo dekho</button>
+    <button id="cCancel" class="ghost hidden" type="button">Cancel</button>
+  </div>
+</div>
+<div id="toasts" class="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
