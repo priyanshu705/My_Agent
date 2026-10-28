@@ -11,14 +11,19 @@ from .google_tools import GOOGLE_NEEDS_CONFIRMATION, GOOGLE_TOOLS, is_connected,
 from .memory_tools import MEMORY_TOOLS, get_facts
 from .pc_tools import NEEDS_CONFIRMATION as PC_NEEDS_CONFIRMATION, PC_TOOLS
 from .browser_tools import BROWSER_NEEDS_CONFIRMATION, BROWSER_TOOLS, confirm_context
+from .browser_agent import BROWSER_AGENT_TOOLS, enabled as browser_agent_enabled
+from .windows_mcp import WINDOWS_MCP_NEEDS_CONFIRMATION, WINDOWS_MCP_TOOLS, confirm_context as wm_context
+from . import llm_router
 from .contacts_tools import CONTACT_TOOLS
 from .web_tools import WEB_TOOLS
 from .whatsapp_tools import WHATSAPP_NEEDS_CONFIRMATION, WHATSAPP_TOOLS
 
-ALL_TOOLS = PC_TOOLS + WEB_TOOLS + BROWSER_TOOLS + MEMORY_TOOLS + GOOGLE_TOOLS + CONTACT_TOOLS + WHATSAPP_TOOLS
-NEEDS_CONFIRMATION = PC_NEEDS_CONFIRMATION | GOOGLE_NEEDS_CONFIRMATION | WHATSAPP_NEEDS_CONFIRMATION | BROWSER_NEEDS_CONFIRMATION
+ALL_TOOLS = PC_TOOLS + WEB_TOOLS + BROWSER_TOOLS + BROWSER_AGENT_TOOLS + WINDOWS_MCP_TOOLS + MEMORY_TOOLS + GOOGLE_TOOLS + CONTACT_TOOLS + WHATSAPP_TOOLS
+NEEDS_CONFIRMATION = PC_NEEDS_CONFIRMATION | GOOGLE_NEEDS_CONFIRMATION | WHATSAPP_NEEDS_CONFIRMATION | BROWSER_NEEDS_CONFIRMATION | WINDOWS_MCP_NEEDS_CONFIRMATION
 TOOL_MAP = {f.__name__: f for f in ALL_TOOLS}
 MAX_STEPS = 8
+# Google retires models without much notice (gemini-2.5-flash already 404s), so never rely on a single name.
+GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"]
 MAX_HISTORY = 40
 
 AGENT_NAME = os.getenv("AGENT_NAME", "Agent")
@@ -51,6 +56,8 @@ Shopping, bookings and job applications (browser tools):
   Amazon, Flipkart, Blinkit, Zepto, Swiggy, Zomato, IRCTC, MakeMyTrip, redBus, BookMyShow, LinkedIn, Naukri and Indeed.
 - Typical flow: open the site, search, compare options (price, rating, delivery), pick the best match for the request, add to cart or fill the form,
   and go as far as the final step. Tell the user what you chose and why in one or two sentences.
+- If browser_task is available, use it for multi-step research on these sites (compare prices across sites, find trains/buses/flights, shortlist jobs).
+  It stops before anything final; then call browser_state and finish with browser_click_final so the user confirms. For simple one-page actions use the step-by-step tools.
 - Anything that spends money or is final (Place order, Pay, Confirm booking, Submit application, Send) MUST go through browser_click_final.
   Give a precise one-line summary: item or route or job, quantity, total price, delivery address, payment method. The user is asked to confirm; never skip this.
 - Never type passwords, card numbers, CVV, UPI PIN, OTP or ID numbers. If a login, OTP or CAPTCHA appears, call browser_login_window or tell the user to
@@ -83,10 +90,11 @@ def google_rules() -> str:
 class Agent:
     def __init__(self):
         key = os.getenv("GEMINI_API_KEY")
-        if not key:
-            raise RuntimeError("GEMINI_API_KEY is missing. Add it to the .env file (see the README).")
-        self.client = genai.Client(api_key=key)
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        if not key and not llm_router.configured():
+            raise RuntimeError("Add LLM_ROUTER_URL and LLM_ROUTER_KEY, or GEMINI_API_KEY, to the .env file (see the README).")
+        self.client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=25000)) if key else None
+        self.model = os.getenv("GEMINI_MODEL", GEMINI_FALLBACKS[0])
+        self._good_model = None
         self.sessions: dict[str, dict] = {}
 
     # ---------- public ----------
@@ -137,6 +145,36 @@ class Agent:
             temperature=0.6,
         )
 
+    def _generate(self, contents):
+        """Router first (many free providers behind one endpoint), then Gemini with a list of model names."""
+        cfg = self._config()
+        r = llm_router.generate(contents, cfg.system_instruction, ALL_TOOLS)
+        if r is not None:
+            return r
+        if self.client is None:
+            raise RuntimeError("The AI router is not answering and no GEMINI_API_KEY is set.")
+        order = []
+        for m in [self._good_model, self.model] + GEMINI_FALLBACKS:
+            if m and m not in order:
+                order.append(m)
+        last = None
+        for m in order[:5]:
+            try:
+                resp = self.client.models.generate_content(model=m, contents=contents, config=cfg)
+                self._good_model = m
+                return resp
+            except Exception as e:  # 404 retired model, 429 quota, 5xx busy, timeout: try the next model
+                last = e
+                code = getattr(e, "code", None)
+                if code not in (None, 404, 408, 429, 500, 502, 503, 504):
+                    break
+        code = getattr(last, "code", None)
+        if code == 429:
+            raise RuntimeError("The free AI quota is used up for now. Please try again in a little while.")
+        if code in (500, 502, 503, 504, 404, 408, None):
+            raise RuntimeError("The AI service is busy right now. Please try again in a minute.")
+        raise last
+
     def _execute(self, call) -> str:
         fn = TOOL_MAP.get(call.name)
         if not fn:
@@ -156,6 +194,9 @@ class Agent:
                 shown = dict(args)
                 if call.name in BROWSER_NEEDS_CONFIRMATION:
                     shown.update(confirm_context(args))
+                if call.name in WINDOWS_MCP_NEEDS_CONFIRMATION:
+                    shown.update(wm_context(args))
+                    args = shown
                 return {
                     "reply": f"Please confirm: {describe(call.name, args)}. Yes or no?",
                     "confirm": {"tool": call.name, "args": shown},
@@ -172,9 +213,10 @@ class Agent:
         actions = actions if actions is not None else []
         for _ in range(MAX_STEPS):
             try:
-                resp = self.client.models.generate_content(model=self.model, contents=s["contents"], config=self._config())
+                resp = self._generate(s["contents"])
             except Exception as e:
-                return {"reply": f"Could not reach the AI service: {e}", "actions": actions, "error": True}
+                msg = str(e) if isinstance(e, RuntimeError) else f"Could not reach the AI service: {e}"
+                return {"reply": msg, "actions": actions, "error": True}
             cand = resp.candidates[0] if resp.candidates else None
             if not cand or not cand.content:
                 return {"reply": "Sorry, I could not produce an answer. Could you rephrase?", "actions": actions}
@@ -215,6 +257,12 @@ def yes_no(text: str):
 def describe(name: str, args: dict) -> str:
     if name == "browser_click_final":
         return str(args.get("summary") or "complete the final step on the website")
+    if name == "windows_click":
+        return f"click the element at ({args.get('x')},{args.get('y')}) on your screen" + (f" ({args['_label']})" if args.get("_label") else "")
+    if name == "windows_type":
+        return f"type \"{str(args.get('text', ''))[:80]}\" at ({args.get('x')},{args.get('y')}) on your screen"
+    if name == "windows_shortcut":
+        return f"press the shortcut {args.get('keys')}"
     return {
         "close_app": f"close {args.get('app_name')}",
         "lock_screen": "lock the screen",

@@ -84,6 +84,13 @@ def _run(fn, *args, timeout=90):
     return _pool.submit(fn, *args).result(timeout=timeout)
 
 
+def _extra_args() -> list[str]:
+    """Local-only debugging port, opened ONLY when the optional browser-use helper is enabled (BROWSER_AGENT=1)."""
+    if os.getenv("BROWSER_AGENT", "0") == "1":
+        return [f"--remote-debugging-port={int(os.getenv('BROWSER_CDP_PORT', '9333'))}", "--remote-debugging-address=127.0.0.1"]
+    return []
+
+
 def _launch():
     if _state["ctx"] is not None:
         try:
@@ -103,7 +110,7 @@ def _launch():
             kw = {"channel": channel} if channel else {}
             ctx = _state["pw"].chromium.launch_persistent_context(
                 str(PROFILE_DIR), headless=os.getenv("WEB_HEADLESS", "0") == "1", viewport={"width": 1280, "height": 860},
-                **kw)
+                args=_extra_args(), **kw)
             _state["ctx"] = ctx
             ctx.on("page", lambda p: _state.__setitem__("page", p))
             _state["page"] = ctx.pages[0] if ctx.pages else ctx.new_page()
