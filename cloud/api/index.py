@@ -446,27 +446,43 @@ def tool_list_reminders() -> str:
     return "\n".join(f"- {fmt_local(r['due_at'])}: {r['text']}" for r in rows) or "Koi reminder pending nahi hai."
 
 
+_GOOD_MODEL = {"name": None}
+MODEL_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"]
+
+
 def gemini(body: dict, model: str | None = None) -> dict:
     key = env("GEMINI_API_KEY")
     if not key:
         raise HTTPException(500, "GEMINI_API_KEY Vercel mein set nahi hai.")
-    url = GEMINI_BASE + (model or env("GEMINI_MODEL", "gemini-2.5-flash")) + ":generateContent"
+    cands = [model] if model else []
+    cands += [m for m in [env("GEMINI_MODEL"), _GOOD_MODEL["name"]] if m]
+    cands += MODEL_FALLBACKS
+    seen, order = set(), []
+    for m in cands:
+        if m not in seen:
+            seen.add(m)
+            order.append(m)
     last = None
-    for attempt in range(3):
-        r = _http.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"}, content=json.dumps(body), timeout=45)
-        if r.status_code == 200:
-            return r.json()
-        last = r
-        if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-            time.sleep(1.5 * (attempt + 1))
-            continue
-        break
+    for m in order[:5]:
+        url = GEMINI_BASE + m + ":generateContent"
+        for attempt in range(3):
+            r = _http.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"}, content=json.dumps(body), timeout=45)
+            if r.status_code == 200:
+                _GOOD_MODEL["name"] = m
+                return r.json()
+            last = r
+            if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
+        if last.status_code not in (404, 400) or ("API key" in last.text):
+            break
     code = last.status_code
     if code == 429:
         raise RuntimeError("Gemini ki free limit abhi poori ho gayi. Thodi der baad try karo.")
     if code in (400, 403) and "API key" in last.text:
         raise RuntimeError("Gemini API key galat hai ya kaam nahi kar rahi. Vercel mein GEMINI_API_KEY check karo.")
-    raise RuntimeError(f"Gemini error {code}. Thodi der baad phir try karo.")
+    raise RuntimeError(f"Gemini error {code}: {last.text[:160]}")
 
 
 def tool_web_search(query: str) -> str:
