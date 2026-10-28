@@ -242,3 +242,4 @@ button { cursor: pointer; }
 .cerr{color:var(--bad);font-size:13px;min-height:18px}.modal-box p{margin:0}.modal-box b{font-size:17px}#connect{z-index:80}
 
 .row .btns { display: flex; gap: 8px; }
+.vstat { font-size: 12px; margin: -6px 2px 4px; min-height: 14px; }
