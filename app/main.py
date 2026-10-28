@@ -12,11 +12,11 @@ load_dotenv(ROOT / ".env")
 
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse  # noqa: E402
+from fastapi.responses import FileResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-from . import dashboard  # noqa: E402
+from . import dashboard, tts_local, wakeword  # noqa: E402
 from .memory_tools import pop_due_reminders  # noqa: E402
 from .whatsapp_tools import pop_notices, start_scheduler  # noqa: E402
 
@@ -27,6 +27,7 @@ app.add_middleware(CORSMiddleware, allow_origins=dashboard.allowed_origins(),
                    allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(dashboard.router)
 start_scheduler()
+wakeword.start()
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 _agent = None
@@ -85,11 +86,34 @@ def config():
         "voice_lang": os.getenv("VOICE_LANG", "en-IN"),
         "has_key": not demo_mode(),
         "demo": demo_mode(),
+        "local_tts": tts_local.enabled(),
+        "wake_engine": "oww" if wakeword.enabled() else "browser",
         "google_connected": google_connected(),
         "phone_url": f"http://{dashboard.lan_ip()}:8000" if os.getenv("ACCESS_PIN") else "",
         "tunnel_url": dashboard.tunnel_url(),
         "ui_url": os.getenv("UI_URL", "https://my-agent-roan-delta.vercel.app"),
     }
+
+
+@app.get("/api/wake")
+def wake():
+    """Counter that goes up each time the offline wake word is heard (see app/wakeword.py)."""
+    return wakeword.status()
+
+
+class TtsIn(BaseModel):
+    text: str
+    voice: str = "hf_alpha"
+    speed: float = 1.0
+
+
+@app.post("/api/tts")
+def tts(body: TtsIn):
+    """Hindi speech from the free local Kokoro model (opt-in with KOKORO_TTS=1). Returns audio/wav."""
+    try:
+        return Response(tts_local.synthesize(body.text, body.voice, body.speed), media_type="audio/wav")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
 
 
 @app.post("/api/chat")
