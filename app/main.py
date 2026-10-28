@@ -88,7 +88,7 @@ def config():
         "google_connected": google_connected(),
         "phone_url": f"http://{dashboard.lan_ip()}:8000" if os.getenv("ACCESS_PIN") else "",
         "tunnel_url": dashboard.tunnel_url(),
-        "ui_url": os.getenv("UI_URL", "https://my-agent-ui-three.vercel.app"),
+        "ui_url": os.getenv("UI_URL", "https://my-agent-roan-delta.vercel.app"),
     }
 
 
@@ -96,7 +96,7 @@ def config():
 def chat(body: ChatIn):
     text = body.text.strip()
     if not text:
-        return {"reply": "Kuch suna nahi, phir se bolo?", "actions": []}
+        return {"reply": "I did not catch that. Could you say it again?", "actions": []}
     result = agent().chat(body.session_id, text)
     dashboard.record(body.session_id, text, result)
     return result

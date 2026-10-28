@@ -74,7 +74,7 @@ def _launch():
         except Exception as e:
             last_err = e
     else:
-        raise RuntimeError(f"Browser start nahi hua (Edge/Chrome chahiye): {last_err}")
+        raise RuntimeError(f"The browser did not start (Edge or Chrome is required): {last_err}")
     _state["ctx"] = ctx
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     page.goto(WA_URL, wait_until="domcontentloaded")
@@ -124,7 +124,7 @@ def _check_rate():
     while _sent_times and now - _sent_times[0] > 3600:
         _sent_times.popleft()
     if len(_sent_times) >= MAX_PER_HOUR:
-        raise RuntimeError(f"Safety limit: ek ghante mein {MAX_PER_HOUR} se zyada message nahi bhejunga.")
+        raise RuntimeError(f"Safety limit: I will not send more than {MAX_PER_HOUR} messages per hour.")
     if _sent_times and now - _sent_times[-1] < MIN_GAP_SECONDS:
         time.sleep(MIN_GAP_SECONDS - (now - _sent_times[-1]))
 
@@ -147,11 +147,11 @@ def _open_chat_by_number(page, phone: str) -> str:
             break
         for s in SEL["invalid_number"]:
             if page.locator(s).count():
-                raise RuntimeError(f"{phone} WhatsApp par nahi hai ya number galat hai.")
+                raise RuntimeError(f"{phone} is not on WhatsApp or the number is wrong.")
         page.wait_for_timeout(500)
     if not box:
         _debug(page)
-        raise RuntimeError("Chat nahi khula (WhatsApp Web load nahi hua).")
+        raise RuntimeError("The chat did not open (WhatsApp Web did not load).")
     return phone
 
 
@@ -159,7 +159,7 @@ def _open_chat_by_name(page, name: str) -> str:
     search = _first(page, "search", 10000)
     if not search:
         _debug(page)
-        raise RuntimeError("WhatsApp search box nahi mila.")
+        raise RuntimeError("WhatsApp search box not found.")
     search.click()
     page.keyboard.press("Control+A")
     page.keyboard.press("Backspace")
@@ -171,12 +171,12 @@ def _open_chat_by_name(page, name: str) -> str:
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
         page.keyboard.press("Escape")
-        raise LookupError(f"WhatsApp chat list mein '{name}' nahi mila.")
+        raise LookupError(f"'{name}' was not found in the WhatsApp chat list.")
     title = hit.get_attribute("title") or name
     hit.click()
     if not _first(page, "compose", 10000):
         _debug(page)
-        raise RuntimeError("Chat khula nahi.")
+        raise RuntimeError("The chat did not open.")
     return title
 
 
@@ -188,7 +188,7 @@ def _attach_file(page, path: Path, caption: str):
     btn = _first(page, "attach", 8000)
     if not btn:
         _debug(page)
-        raise RuntimeError("Attach button nahi mila.")
+        raise RuntimeError("Attach button not found.")
     btn.click()
     page.wait_for_timeout(800)
     is_media = path.suffix.lower() in IMAGE_EXT
@@ -206,12 +206,12 @@ def _attach_file(page, path: Path, caption: str):
         chosen = inputs.first
     if chosen is None:
         _debug(page)
-        raise RuntimeError("File upload option nahi mila.")
+        raise RuntimeError("File upload option not found.")
     chosen.set_input_files(str(path))
     send = _first(page, "media_send", 20000)
     if not send:
         _debug(page)
-        raise RuntimeError("File preview ka Send button nahi mila.")
+        raise RuntimeError("Send button not found in the file preview.")
     if caption:
         page.keyboard.insert_text(caption)
     send.click()
@@ -221,10 +221,10 @@ def _do_send(target: dict, message: str = "", file_path: str = "") -> str:
     page = _launch()
     status = _ready(page)
     if status == "qr":
-        return "WhatsApp login nahi hai. Khuli hui window mein QR code apne phone se scan karo, phir dobara bolo."
+        return "WhatsApp is not logged in. Scan the QR code in the open window with your phone, then ask again."
     if status != "ok":
         _debug(page)
-        return "WhatsApp Web load nahi hua. Internet check karo."
+        return "WhatsApp Web did not load. Check your internet connection."
     _check_rate()
     title = _open_chat(page, target)
     if file_path:
@@ -236,14 +236,14 @@ def _do_send(target: dict, message: str = "", file_path: str = "") -> str:
     page.wait_for_timeout(1500)
     _sent_times.append(time.time())
     what = f"file {Path(file_path).name}" if file_path else "message"
-    return f"WhatsApp {what} bhej diya: {target.get('label') or title}."
+    return f"WhatsApp {what} sent: {target.get('label') or title}."
 
 
 def _do_unread(limit: int) -> str:
     page = _launch()
     status = _ready(page)
     if status != "ok":
-        return "WhatsApp login nahi hai. Window mein QR scan karo." if status == "qr" else "WhatsApp Web load nahi hua."
+        return "WhatsApp is not logged in. Scan the QR code in the window." if status == "qr" else "WhatsApp Web did not load."
     page.wait_for_timeout(1500)
     rows = page.evaluate("""(limit) => {
       const rows = [...document.querySelectorAll('#pane-side [role="listitem"], #pane-side [role="row"]')];
@@ -258,14 +258,14 @@ def _do_unread(limit: int) -> str:
       return out;
     }""", limit)
     if not rows:
-        return "WhatsApp par koi unread message nahi hai."
+        return "No unread WhatsApp messages."
     return "\n".join(f"- {r['name']} ({r['count'] or 'new'}): {r['last'] if r['last'] != r['name'] else ''}" for r in rows)
 
 
 def _do_read_chat(target: dict, count: int) -> str:
     page = _launch()
     if _ready(page) != "ok":
-        return "WhatsApp login nahi hai. Window mein QR scan karo."
+        return "WhatsApp is not logged in. Scan the QR code in the window."
     title = _open_chat(page, target)
     page.wait_for_timeout(1500)
     msgs = page.evaluate("""(count) => {
@@ -277,7 +277,7 @@ def _do_read_chat(target: dict, count: int) -> str:
       });
     }""", count)
     if not msgs:
-        return f"{title} ki chat mein text messages nahi mile."
+        return f"No text messages found in the chat with {title}."
     return f"{title} ke last messages:\n" + "\n".join(msgs)
 
 
@@ -313,7 +313,7 @@ def whatsapp_send(to: str, message: str) -> str:
         message: The message text.
     """
     if not message.strip():
-        return "Message khaali hai."
+        return "The message is empty."
     return _run(_do_send, _target(to), message)
 
 
@@ -327,9 +327,9 @@ def whatsapp_send_file(to: str, file_path: str, caption: str = "") -> str:
     """
     p = Path(file_path).expanduser()
     if not p.is_file():
-        return f"File nahi mili: {file_path}. Pehle search_files se sahi path lo."
+        return f"File not found: {file_path}. Use search_files first to get the correct path."
     if p.stat().st_size > 100 * 1024 * 1024:
-        return "File 100 MB se badi hai, WhatsApp par nahi jaayegi."
+        return "The file is larger than 100 MB and cannot be sent on WhatsApp."
     return _run(_do_send, _target(to), caption, str(p))
 
 
@@ -378,22 +378,22 @@ def whatsapp_schedule(to: str, message: str, at_time: str, file_path: str = "") 
     try:
         due = datetime.strptime(at_time.strip(), "%Y-%m-%d %H:%M")
     except ValueError:
-        return "Time ka format 'YYYY-MM-DD HH:MM' chahiye."
+        return "Use the time format 'YYYY-MM-DD HH:MM'."
     if due <= datetime.now():
-        return "Ye time nikal chuka hai."
+        return "That time has already passed."
     with _lock:
         items = _load_sched()
         items.append({"to": to, "message": message, "file": file_path, "due": due.strftime("%Y-%m-%d %H:%M"),
                       "status": "pending"})
         _save_sched(items)
-    return f"Schedule ho gaya: {to} ko {due:%d %b %I:%M %p} par WhatsApp jaayega (PC aur agent chalu rehne chahiye)."
+    return f"Scheduled: WhatsApp to {to} on {due:%d %b at %I:%M %p} (the PC and agent must stay on)."
 
 
 def whatsapp_list_scheduled() -> str:
     """List pending scheduled WhatsApp messages."""
     items = [i for i in _load_sched() if i["status"] == "pending"]
     if not items:
-        return "Koi scheduled WhatsApp message nahi hai."
+        return "No scheduled WhatsApp messages."
     return "\n".join(f"{n+1}. {i['due']} -> {i['to']}: {i['message'][:60]}" for n, i in enumerate(items))
 
 
@@ -407,10 +407,10 @@ def whatsapp_cancel_scheduled(number: int) -> str:
         items = _load_sched()
         pending = [i for i in items if i["status"] == "pending"]
         if not 1 <= number <= len(pending):
-            return "Is number ka scheduled message nahi hai."
+            return "There is no scheduled message with that number."
         pending[number - 1]["status"] = "cancelled"
         _save_sched(items)
-    return "Scheduled message cancel kar diya."
+    return "Scheduled message cancelled."
 
 
 _notices: list[str] = []
@@ -437,7 +437,7 @@ def _scheduler_loop():
                 result = whatsapp_send_file(i["to"], i["file"], i["message"])
             else:
                 result = whatsapp_send(i["to"], i["message"])
-            ok = "bhej diya" in result
+            ok = result.startswith("WhatsApp") and " sent:" in result
             with _lock:
                 items = _load_sched()
                 for j in items:
@@ -466,6 +466,6 @@ WHATSAPP_NEEDS_CONFIRMATION = {"whatsapp_send", "whatsapp_send_file", "whatsapp_
 
 
 if __name__ == "__main__":
-    print("WhatsApp Web khul raha hai. Phone mein WhatsApp > Linked devices > Link a device se QR scan karo...")
+    print("WhatsApp Web is opening. On your phone, go to WhatsApp > Linked devices > Link a device and scan the QR code...")
     result = open_for_login()
-    print("WhatsApp connect ho gaya! Ab run.bat chalao." if result == "ok" else f"Login nahi hua ({result}). Dobara try karo.")
+    print("WhatsApp connected! Now run run.bat." if result == "ok" else f"Login failed ({result}). Please try again.")

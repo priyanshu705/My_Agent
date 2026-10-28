@@ -50,7 +50,7 @@ def list_notes(search: str = "") -> str:
     """
     notes = [n for n in _load()["notes"] if search.lower() in n["text"].lower()]
     if not notes:
-        return "Koi note nahi mila."
+        return "No notes found."
     return "\n".join(f"{i+1}. {n['text']} ({n['at']})" for i, n in enumerate(notes[-20:]))
 
 
@@ -73,7 +73,7 @@ def list_todos() -> str:
     """Show the user's to-do list with numbers."""
     todos = _load()["todos"]
     if not todos:
-        return "To-do list khaali hai."
+        return "The to-do list is empty."
     return "\n".join(f"{i+1}. [{'x' if t['done'] else ' '}] {t['task']}" for i, t in enumerate(todos))
 
 
@@ -86,7 +86,7 @@ def complete_todo(number: int) -> str:
     with _lock:
         db = _load()
         if not 1 <= number <= len(db["todos"]):
-            return "Is number ka task nahi hai."
+            return "There is no task with that number."
         db["todos"][number - 1]["done"] = True
         _save(db)
         return f"Done mark kiya: {db['todos'][number - 1]['task']}"
@@ -106,11 +106,11 @@ def add_reminder(text: str, minutes_from_now: int = 0, at_time: str = "") -> str
         try:
             due = datetime.strptime(at_time, "%Y-%m-%d %H:%M")
         except ValueError:
-            return "Time ka format 'YYYY-MM-DD HH:MM' chahiye."
+            return "Use the time format 'YYYY-MM-DD HH:MM'."
     elif minutes_from_now > 0:
         due = datetime.now() + timedelta(minutes=minutes_from_now)
     else:
-        return "Reminder kab chahiye? Minutes ya time batao."
+        return "When should the reminder fire? Give minutes or a time."
     with _lock:
         db = _load()
         db["reminders"].append({"text": text, "due": due.strftime("%Y-%m-%d %H:%M"), "fired": False})
@@ -122,7 +122,7 @@ def list_reminders() -> str:
     """List upcoming reminders."""
     rem = [r for r in _load()["reminders"] if not r["fired"]]
     if not rem:
-        return "Koi upcoming reminder nahi hai."
+        return "No upcoming reminders."
     return "\n".join(f"- {r['text']} at {r['due']}" for r in sorted(rem, key=lambda r: r["due"]))
 
 

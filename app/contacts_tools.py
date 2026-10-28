@@ -80,7 +80,7 @@ def save_contact(name: str, phone: str) -> str:
     """
     num = _norm_phone(phone)
     if len(num) < 11:
-        return "Phone number sahi nahi lag raha. 10 digit ya country code ke saath do."
+        return "That phone number does not look valid. Use 10 digits or include the country code."
     with _lock:
         data = _load()
         data[name.strip()] = num
@@ -96,8 +96,8 @@ def find_contact(name: str) -> str:
     """
     matches = find_matches(name)
     if not matches:
-        return (f"'{name}' saved contacts ya Google Contacts mein nahi mila. WhatsApp chat list mein naam se "
-                f"dhundh sakta hoon, ya number bata do.")
+        return (f"'{name}' was not found in saved contacts or Google Contacts. I can search the WhatsApp chat list by name, "
+                f"or you can give me the number.")
     return "\n".join(f"- {m['name']}: +{m['phone']} ({m['source']})" for m in matches[:10])
 
 
@@ -105,7 +105,7 @@ def list_contacts() -> str:
     """List all contacts saved in the agent's own contact list."""
     data = _load()
     if not data:
-        return "Abhi koi contact save nahi hai."
+        return "No contacts saved yet."
     return "\n".join(f"- {n}: +{p}" for n, p in sorted(data.items()))
 
 

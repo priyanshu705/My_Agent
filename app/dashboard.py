@@ -295,7 +295,7 @@ def _pin() -> str:
 
 
 def allowed_origins() -> list[str]:
-    raw = os.getenv("ALLOWED_ORIGINS", "https://my-agent-ui-three.vercel.app,https://my-agent-ui-sunny-16e8.vercel.app")
+    raw = os.getenv("ALLOWED_ORIGINS", "https://my-agent-roan-delta.vercel.app,https://my-agent-ui-three.vercel.app,https://my-agent-ui-sunny-16e8.vercel.app")
     return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
 
 
@@ -364,14 +364,14 @@ async def guard(request: Request, call_next):
     path = request.url.path
     pin = _pin()
     if not pin or len(pin) < MIN_PIN_LEN:
-        msg = ("Remote access band hai. .env mein kam se kam %d characters ka ACCESS_PIN set karo." % MIN_PIN_LEN)
+        msg = ("Remote access is disabled. Set an ACCESS_PIN of at least %d characters in .env." % MIN_PIN_LEN)
         return JSONResponse({"detail": msg}, status_code=403)
     if path in ("/login", "/api/login", "/api/ping"):
         return await call_next(request)
     if _valid_token(_bearer(request)):
         return await call_next(request)
     if path.startswith("/api/"):
-        return JSONResponse({"detail": "Login chahiye"}, status_code=401)
+        return JSONResponse({"detail": "Login required"}, status_code=401)
     return RedirectResponse("/login")
 
 
@@ -390,7 +390,7 @@ def login(body: LoginIn, request: Request):
     ip = client_ip(request)
     count, until, strikes = _fails.get(ip, (0, 0.0, 0))
     if until > time.time():
-        raise HTTPException(429, f"Bahut galat try. {int(until - time.time())} second baad try karo.")
+        raise HTTPException(429, f"Too many failed attempts. Try again in {int(until - time.time())} seconds.")
     pin = _pin()
     if pin and len(pin) >= MIN_PIN_LEN and hmac.compare_digest(body.pin.strip().encode(), pin.encode()):
         _fails.pop(ip, None)
@@ -407,7 +407,7 @@ def login(body: LoginIn, request: Request):
         _fails[ip] = (0, time.time() + min(3600, 60 * 2 ** (strikes - 1)), strikes)
     else:
         _fails[ip] = (count, 0.0, strikes)
-    raise HTTPException(401, "PIN galat hai")
+    raise HTTPException(401, "Incorrect PIN")
 
 
 @router.post("/api/logout")

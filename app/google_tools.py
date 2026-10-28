@@ -21,7 +21,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/contacts.readonly",  # Phase 3: find WhatsApp numbers by name
 ]
 
-SETUP_MSG = ("Google abhi connected nahi hai. README ke 'Phase 2: Gmail + Calendar setup' steps follow karo "
+SETUP_MSG = ("Google is not connected yet. Follow the 'Phase 2: Gmail + Calendar setup' steps in the README "
              "aur setup_google.bat chalao.")
 
 _services = {}
@@ -50,7 +50,7 @@ def get_credentials(interactive: bool = False):
     if not interactive:
         return None
     if not CREDENTIALS.exists():
-        raise FileNotFoundError(f"credentials.json nahi mili: {CREDENTIALS}")
+        raise FileNotFoundError(f"credentials.json not found: {CREDENTIALS}")
     from google_auth_oauthlib.flow import InstalledAppFlow
     flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS), SCOPES)
     creds = flow.run_local_server(port=0, prompt="consent")
@@ -112,7 +112,7 @@ def _summaries(query: str, max_results: int) -> str:
     res = g.users().messages().list(userId="me", q=query, maxResults=max(1, min(int(max_results), 15))).execute()
     ids = [m["id"] for m in res.get("messages", [])]
     if not ids:
-        return "Koi mail nahi mila."
+        return "No mail found."
     lines = []
     for i, mid in enumerate(ids, 1):
         m = g.users().messages().get(userId="me", id=mid, format="metadata",
@@ -190,7 +190,7 @@ def find_email_address(name: str) -> str:
                     if em:
                         found[em.group().lower()] = part.strip()
     if not found:
-        return f"'{name}' ka email address purane mails mein nahi mila. User se poochho."
+        return f"Could not find an email address for '{name}' in past mail. Ask the user."
     return "Mile addresses:\n" + "\n".join(found.values())
 
 
@@ -218,9 +218,9 @@ def gmail_create_draft(to: str, subject: str, body: str, cc: str = "") -> str:
         cc: Optional CC addresses.
     """
     if not _valid_emails(to):
-        return "Sahi email address chahiye (jaise name@gmail.com)."
+        return "A valid email address is required (for example name@gmail.com)."
     d = _gmail().users().drafts().create(userId="me", body={"message": _mime(to, subject, body, cc)}).execute()
-    return f"Draft ban gaya (id {d['id']}) - To: {to}, Subject: {subject}. Gmail ke Drafts mein dekh lo."
+    return f"Draft created (id {d['id']}) - To: {to}, Subject: {subject}. You can review it in Gmail Drafts."
 
 
 @_safe
@@ -234,9 +234,9 @@ def gmail_send(to: str, subject: str, body: str, cc: str = "") -> str:
         cc: Optional CC addresses.
     """
     if not _valid_emails(to):
-        return "Sahi email address chahiye (jaise name@gmail.com)."
+        return "A valid email address is required (for example name@gmail.com)."
     _gmail().users().messages().send(userId="me", body=_mime(to, subject, body, cc)).execute()
-    return f"Mail bhej diya {to} ko - Subject: {subject}."
+    return f"Email sent to {to} - Subject: {subject}."
 
 
 # ---------------- Calendar ----------------
@@ -248,7 +248,7 @@ def _parse_dt(text: str) -> datetime:
             return datetime.strptime(text[:19], fmt).replace(tzinfo=tz())
         except ValueError:
             pass
-    raise ValueError(f"Date/time samajh nahi aaya: '{text}'. Format 'YYYY-MM-DD HH:MM' chahiye.")
+    raise ValueError(f"Could not understand the date/time: '{text}'. Use the format 'YYYY-MM-DD HH:MM'.")
 
 
 def _fmt_event(e) -> str:
@@ -281,7 +281,7 @@ def calendar_list_events(date: str = "", days: int = 1) -> str:
     start = start.replace(hour=0, minute=0, second=0, microsecond=0)
     events = _events_between(start, start + timedelta(days=max(1, int(days))))
     if not events:
-        return "Is time par calendar mein kuch nahi hai."
+        return "Nothing on the calendar at this time."
     return "\n".join(_fmt_event(e) for e in events)
 
 
@@ -334,7 +334,7 @@ def calendar_update_event(event_id: str, new_start: str = "", new_title: str = "
         e["start"] = {"dateTime": st.isoformat(), "timeZone": str(tz())}
         e["end"] = {"dateTime": (st + dur).isoformat(), "timeZone": str(tz())}
     e = cal.events().update(calendarId="primary", eventId=event_id, body=e, sendUpdates="all").execute()
-    return f"Event update ho gaya: {_fmt_event(e)}"
+    return f"Event updated: {_fmt_event(e)}"
 
 
 @_safe
@@ -347,7 +347,7 @@ def calendar_delete_event(event_id: str) -> str:
     cal = _calendar()
     e = cal.events().get(calendarId="primary", eventId=event_id).execute()
     cal.events().delete(calendarId="primary", eventId=event_id, sendUpdates="all").execute()
-    return f"Event cancel kar diya: {e.get('summary', '(no title)')}"
+    return f"Event cancelled: {e.get('summary', '(no title)')}"
 
 
 @_safe
@@ -384,7 +384,7 @@ def calendar_find_free_time(date: str = "", days: int = 7, min_minutes: int = 60
         if (end - cur).total_seconds() >= min_minutes * 60:
             slots.append((cur, end))
     if not slots:
-        return "Is range mein koi free slot nahi mila."
+        return "No free slot found in this range."
     return "Free slots:\n" + "\n".join(f"- {a:%a %d %b}: {a:%I:%M %p} - {b:%I:%M %p}" for a, b in slots[:20])
 
 
@@ -398,4 +398,4 @@ GOOGLE_NEEDS_CONFIRMATION = {"gmail_send", "calendar_update_event", "calendar_de
 if __name__ == "__main__":
     # python -m app.google_tools  -> opens the Google login page once and saves token.json
     get_credentials(interactive=True)
-    print("Google connect ho gaya! token.json save ho gaya. Ab run.bat chalao.")
+    print("Google connected! token.json saved. Now run run.bat.")
