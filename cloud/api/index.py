@@ -631,7 +631,7 @@ def tool_list_reminders() -> str:
 
 
 _GOOD_MODEL = {"name": None}
-MODEL_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"]
+MODEL_FALLBACKS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]
 
 
 def gemini(body: dict, model: str | None = None) -> dict:
@@ -647,10 +647,17 @@ def gemini(body: dict, model: str | None = None) -> dict:
             seen.add(m)
             order.append(m)
     last = None
+    t_end = time.time() + 44
     for m in order[:5]:
+        if time.time() > t_end:
+            break
         url = GEMINI_BASE + m + ":generateContent"
         for attempt in range(3):
-            r = _http.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"}, content=json.dumps(body), timeout=14)
+            try:
+                r = _http.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"}, content=json.dumps(body), timeout=min(14, max(3, t_end - time.time())))
+            except httpx.HTTPError:
+                last = None
+                break
             if r.status_code == 200:
                 _GOOD_MODEL["name"] = m
                 return r.json()
@@ -659,8 +666,10 @@ def gemini(body: dict, model: str | None = None) -> dict:
                 time.sleep(1.5)
                 continue
             break
-        if last.status_code not in (404, 400, 429, 500, 502, 503, 504) or ("API key" in last.text):
+        if last is not None and (last.status_code not in (404, 400, 429, 500, 502, 503, 504) or ("API key" in last.text)):
             break
+    if last is None:
+        raise RuntimeError("Gemini did not respond in time. Please try again in a moment.")
     code = last.status_code
     if code == 429:
         raise RuntimeError("The Gemini free quota is used up for now. Please try again in a little while.")
