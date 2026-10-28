@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -629,6 +629,103 @@ def chat(body: ChatIn):
 @app.post("/api/confirm")
 def confirm(body: ConfirmIn):
     return {"reply": "There is nothing to confirm in cloud mode.", "actions": []}
+
+
+
+# ---------- text to speech (Gemini TTS, natural voices, auto language incl. Hindi) ----------
+TTS_MODELS = ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"]
+TTS_LEGACY = ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"]
+TTS_VOICES = {"Sulafat", "Achernar", "Aoede", "Vindemiatrix", "Leda", "Kore", "Zephyr", "Gacrux", "Charon", "Puck", "Orus", "Algieba", "Achird", "Callirrhoe"}
+_tts_good = {"name": None, "legacy": False}
+
+
+class TtsIn(BaseModel):
+    text: str
+    voice: str = "Sulafat"
+
+
+def _wav(pcm: bytes, rate: int = 24000) -> bytes:
+    import struct
+    hdr = b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) + b"data" + struct.pack("<I", len(pcm))
+    return hdr + pcm
+
+
+def _find_audio(o):
+    """Find base64 audio in either the Interactions or generateContent response shapes."""
+    if isinstance(o, dict):
+        inl = o.get("inlineData") or o.get("inline_data")
+        if isinstance(inl, dict) and isinstance(inl.get("data"), str) and len(inl["data"]) > 100:
+            return inl["data"], str(inl.get("mimeType") or inl.get("mime_type") or "audio/l16")
+        d = o.get("data")
+        mime = str(o.get("mime_type") or o.get("mimeType") or "")
+        if isinstance(d, str) and len(d) > 100 and ("audio" in mime.lower() or "l16" in mime.lower()):
+            return d, mime
+        for v in o.values():
+            r = _find_audio(v)
+            if r:
+                return r
+    elif isinstance(o, list):
+        for v in o:
+            r = _find_audio(v)
+            if r:
+                return r
+    return None
+
+
+def _tts_call(model: str, text: str, voice: str, legacy: bool):
+    key = env("GEMINI_API_KEY")
+    hdr = {"x-goog-api-key": key, "Content-Type": "application/json"}
+    if legacy:
+        url = GEMINI_BASE + model + ":generateContent"
+        body = {"contents": [{"parts": [{"text": text}]}], "generationConfig": {"responseModalities": ["AUDIO"],
+                "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}}}}
+    else:
+        url = "https://generativelanguage.googleapis.com/v1beta/interactions"
+        body = {"model": model, "input": [{"type": "user_input", "content": [{"type": "text", "text": text}]}],
+                "response_format": {"type": "audio"}, "generation_config": {"speech_config": [{"voice": voice}]}}
+    r = _http.post(url, headers=hdr, content=json.dumps(body), timeout=25)
+    return r
+
+
+@app.post("/api/tts")
+def tts(body: TtsIn):
+    text = re.sub(r"\s+", " ", body.text).strip()[:700]
+    if not text:
+        raise HTTPException(400, "Nothing to say.")
+    if not env("GEMINI_API_KEY"):
+        raise HTTPException(500, "GEMINI_API_KEY is not set in Vercel.")
+    voice = body.voice if body.voice in TTS_VOICES else "Sulafat"
+    order = []
+    if _tts_good["name"]:
+        order.append((_tts_good["name"], _tts_good["legacy"]))
+    order += [(m, False) for m in TTS_MODELS] + [(m, True) for m in TTS_LEGACY]
+    seen, tries, last = set(), [], ""
+    for m, lg in order:
+        if (m, lg) in seen:
+            continue
+        seen.add((m, lg))
+        try:
+            r = _tts_call(m, text, voice, lg)
+        except Exception as e:
+            last = f"{m}: {e}"
+            continue
+        if r.status_code == 200:
+            try:
+                found = _find_audio(r.json())
+            except Exception:
+                found = None
+            if found:
+                raw = base64.b64decode(found[0])
+                mime = found[1].lower()
+                wav = raw if raw[:4] == b"RIFF" else _wav(raw)
+                _tts_good.update(name=m, legacy=lg)
+                return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "no-store", "X-TTS-Model": m})
+            last = f"{m}: no audio in response"
+            continue
+        last = f"{m}: {r.status_code} {r.text[:120]}"
+        if r.status_code == 429:
+            break
+    raise HTTPException(502, "Voice service unavailable: " + last)
 
 
 @app.post("/api/reset")
