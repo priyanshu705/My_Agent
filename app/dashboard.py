@@ -3,14 +3,13 @@
 Nothing here is an AI tool. It only feeds the web UI in static/.
 """
 
-import hashlib
 import hmac
 import json
 import os
+import secrets
 import socket
 import threading
 import time
-import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -268,10 +267,16 @@ def reminder_add(body: ReminderIn):
     return {"message": mem.add_reminder(body.text.strip(), minutes_from_now=max(1, body.minutes))}
 
 
-# ---------------------------------------------------------------- phone access (PIN)
+# ---------------------------------------------------------------- remote access (PIN + token)
+# The PC itself is always allowed. Everyone else (phone on Wi-Fi, or the Vercel UI through a
+# Cloudflare tunnel) must log in with ACCESS_PIN and then send the token it gets back.
 
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost"}
-_fails: dict[str, tuple[int, float]] = {}
+TOKEN_FILE = ROOT / "data" / "auth_tokens.json"
+TOKEN_DAYS = 30
+MIN_PIN_LEN = 6
+_fails: dict[str, tuple[int, float, int]] = {}  # ip -> (count, locked_until, strikes)
+_tokens: dict[str, float] | None = None
 
 
 def lan_ip() -> str:
@@ -289,32 +294,91 @@ def _pin() -> str:
     return os.getenv("ACCESS_PIN", "").strip()
 
 
-def _token() -> str:
-    return hmac.new(_pin().encode(), b"my_agent_session", hashlib.sha256).hexdigest()
+def allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "https://my-agent-ui-three.vercel.app,https://my-agent-ui-sunny-16e8.vercel.app")
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+
+
+def tunnel_url() -> str:
+    f = ROOT / "data" / "tunnel_url.txt"
+    try:
+        return f.read_text(encoding="utf-8").strip() if f.exists() else ""
+    except OSError:
+        return ""
+
+
+def _load_tokens() -> dict[str, float]:
+    global _tokens
+    if _tokens is None:
+        try:
+            _tokens = {k: float(v) for k, v in json.loads(TOKEN_FILE.read_text(encoding="utf-8")).items()}
+        except (OSError, ValueError):
+            _tokens = {}
+    now = time.time()
+    for k in [k for k, v in _tokens.items() if v < now]:
+        _tokens.pop(k, None)
+    return _tokens
+
+
+def _save_tokens() -> None:
+    try:
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_FILE.write_text(json.dumps(_tokens or {}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _valid_token(tok: str) -> bool:
+    if not tok:
+        return False
+    with _lock:
+        for k, exp in _load_tokens().items():
+            if hmac.compare_digest(k, tok) and exp > time.time():
+                return True
+    return False
+
+
+def client_ip(request: Request) -> str:
+    h = request.headers
+    return (h.get("cf-connecting-ip") or (h.get("x-forwarded-for") or "").split(",")[0].strip()
+            or (request.client.host if request.client else "?"))
 
 
 def is_local(request: Request) -> bool:
     host = request.client.host if request.client else ""
-    proxied = any(h in request.headers for h in ("x-forwarded-for", "cf-connecting-ip", "x-real-ip"))
+    proxied = any(h in request.headers for h in ("x-forwarded-for", "cf-connecting-ip", "x-real-ip", "cf-ray"))
     return host in LOCAL_HOSTS and not proxied
 
 
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return request.cookies.get("agent_auth", "")
+
+
 async def guard(request: Request, call_next):
-    """PC itself: always allowed. Anyone else: only with the right PIN cookie."""
-    if is_local(request):
+    """PC itself: always allowed. Anyone else: only with a valid login token."""
+    if request.method == "OPTIONS" or is_local(request):
         return await call_next(request)
     path = request.url.path
-    if not _pin():
-        return JSONResponse({"detail": "Remote access band hai. .env mein ACCESS_PIN set karo aur run_phone.bat chalao."},
-                            status_code=403)
-    if path in ("/login", "/api/login"):
+    pin = _pin()
+    if not pin or len(pin) < MIN_PIN_LEN:
+        msg = ("Remote access band hai. .env mein kam se kam %d characters ka ACCESS_PIN set karo." % MIN_PIN_LEN)
+        return JSONResponse({"detail": msg}, status_code=403)
+    if path in ("/login", "/api/login", "/api/ping"):
         return await call_next(request)
-    cookie = request.cookies.get("agent_auth", "")
-    if cookie and hmac.compare_digest(cookie, _token()):
+    if _valid_token(_bearer(request)):
         return await call_next(request)
     if path.startswith("/api/"):
         return JSONResponse({"detail": "Login chahiye"}, status_code=401)
     return RedirectResponse("/login")
+
+
+@router.get("/api/ping")
+def ping():
+    """Unauthenticated, reveals nothing: lets the UI tell 'PC offline' from 'login needed'."""
+    return {"ok": True}
 
 
 class LoginIn(BaseModel):
@@ -323,20 +387,38 @@ class LoginIn(BaseModel):
 
 @router.post("/api/login")
 def login(body: LoginIn, request: Request):
-    ip = request.client.host if request.client else "?"
-    count, until = _fails.get(ip, (0, 0.0))
+    ip = client_ip(request)
+    count, until, strikes = _fails.get(ip, (0, 0.0, 0))
     if until > time.time():
         raise HTTPException(429, f"Bahut galat try. {int(until - time.time())} second baad try karo.")
-    if _pin() and hmac.compare_digest(body.pin.strip(), _pin()):
+    pin = _pin()
+    if pin and len(pin) >= MIN_PIN_LEN and hmac.compare_digest(body.pin.strip().encode(), pin.encode()):
         _fails.pop(ip, None)
-        resp = JSONResponse({"ok": True})
-        resp.set_cookie("agent_auth", _token(), httponly=True, samesite="strict", max_age=60 * 60 * 24 * 30)
+        tok = secrets.token_urlsafe(32)
+        with _lock:
+            _load_tokens()[tok] = time.time() + TOKEN_DAYS * 86400
+            _save_tokens()
+        resp = JSONResponse({"ok": True, "token": tok})
+        resp.set_cookie("agent_auth", tok, httponly=True, samesite="lax", max_age=TOKEN_DAYS * 86400)
         return resp
     count += 1
-    _fails[ip] = (count, time.time() + 60 if count >= 5 else 0.0)
-    if count >= 5:
-        _fails[ip] = (0, time.time() + 60)
+    if count >= 5:  # lock grows: 1 min, 2 min, 4 min ... up to 1 hour
+        strikes += 1
+        _fails[ip] = (0, time.time() + min(3600, 60 * 2 ** (strikes - 1)), strikes)
+    else:
+        _fails[ip] = (count, 0.0, strikes)
     raise HTTPException(401, "PIN galat hai")
+
+
+@router.post("/api/logout")
+def logout(request: Request):
+    tok = _bearer(request)
+    with _lock:
+        _load_tokens().pop(tok, None)
+        _save_tokens()
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("agent_auth")
+    return resp
 
 
 LOGIN_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -354,7 +436,7 @@ background:linear-gradient(135deg,#19d3ff,#7a5cff);color:#04101f}
 #err{color:#ff6b7a;font-size:13px;min-height:18px;margin-top:10px}
 </style></head><body>
 <form id="f"><h1>Agent</h1><p>PIN daalo (PC wale .env mein ACCESS_PIN)</p>
-<input id="pin" type="password" inputmode="numeric" autocomplete="off" autofocus>
+<input id="pin" type="password" autocomplete="off" autofocus>
 <button>Andar jao</button><div id="err"></div></form>
 <script>
 document.getElementById("f").onsubmit=async e=>{e.preventDefault();

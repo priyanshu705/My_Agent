@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
@@ -20,7 +21,10 @@ from .memory_tools import pop_due_reminders  # noqa: E402
 from .whatsapp_tools import pop_notices, start_scheduler  # noqa: E402
 
 app = FastAPI(title="My_Agent")
-app.middleware("http")(dashboard.guard)  # PC is always allowed; phones need ACCESS_PIN
+app.middleware("http")(dashboard.guard)  # PC is always allowed; everyone else needs ACCESS_PIN login
+# Added after the guard so it is outermost: browser preflight (OPTIONS) is answered before auth.
+app.add_middleware(CORSMiddleware, allow_origins=dashboard.allowed_origins(),
+                   allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(dashboard.router)
 start_scheduler()
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
@@ -41,6 +45,8 @@ def demo_mode() -> bool:
 def agent():
     global _agent
     if _agent is None:
+        from . import safety
+        safety.harden()
         from .agent import Agent
         if demo_mode():
             from .demo_agent import DemoAgent
@@ -81,6 +87,8 @@ def config():
         "demo": demo_mode(),
         "google_connected": google_connected(),
         "phone_url": f"http://{dashboard.lan_ip()}:8000" if os.getenv("ACCESS_PIN") else "",
+        "tunnel_url": dashboard.tunnel_url(),
+        "ui_url": os.getenv("UI_URL", "https://my-agent-ui-three.vercel.app"),
     }
 
 
