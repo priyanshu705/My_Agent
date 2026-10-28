@@ -631,7 +631,7 @@ def tool_list_reminders() -> str:
 
 
 _GOOD_MODEL = {"name": None}
-MODEL_FALLBACKS = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]
+MODEL_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"]
 
 
 def gemini(body: dict, model: str | None = None) -> dict:
@@ -662,9 +662,6 @@ def gemini(body: dict, model: str | None = None) -> dict:
                 _GOOD_MODEL["name"] = m
                 return r.json()
             last = r
-            if r.status_code in (500, 502, 503, 504) and attempt < 1:
-                time.sleep(1.5)
-                continue
             break
         if last is not None and (last.status_code not in (404, 400, 429, 500, 502, 503, 504) or ("API key" in last.text)):
             break
