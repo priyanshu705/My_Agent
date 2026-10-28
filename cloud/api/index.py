@@ -37,6 +37,8 @@ GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
 ROOT = Path(__file__).resolve().parent.parent
 app = FastAPI(title="My_Agent cloud")
 _http = httpx.Client(timeout=25)
+import logging
+log = logging.getLogger("agent")
 
 
 def env(name: str, default: str = "") -> str:
@@ -634,7 +636,7 @@ _GOOD_MODEL = {"name": None}
 MODEL_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"]
 
 
-def gemini(body: dict, model: str | None = None) -> dict:
+def gemini(body: dict, model: str | None = None, budget: float = 44) -> dict:
     key = env("GEMINI_API_KEY")
     if not key:
         raise HTTPException(500, "GEMINI_API_KEY is not set in Vercel.")
@@ -647,7 +649,7 @@ def gemini(body: dict, model: str | None = None) -> dict:
             seen.add(m)
             order.append(m)
     last = None
-    t_end = time.time() + 44
+    t_end = time.time() + budget
     for m in order[:5]:
         if time.time() > t_end:
             break
@@ -675,10 +677,130 @@ def gemini(body: dict, model: str | None = None) -> dict:
     raise RuntimeError("Gemini is busy right now (all models are under load). Please try again in a minute." if code in (500, 502, 503, 504) else f"Gemini error {code}: {last.text[:160]}")
 
 
+# ---------- LLM router (self-hosted freellmapi on Render: many free providers with failover) ----------
+# The chat loop speaks Gemini's format. llm() first tries the OpenAI-compatible router and converts
+# both ways; if the router is not configured, asleep or failing, it falls back to Gemini directly.
+_ROUTER_DOWN = {"until": 0.0}
+
+
+def _oa_schema(x):
+    if isinstance(x, dict):
+        return {k: (v.lower() if k == "type" and isinstance(v, str) else _oa_schema(v)) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_oa_schema(v) for v in x]
+    return x
+
+
+def _to_openai(body: dict) -> dict:
+    msgs = []
+    si = body.get("systemInstruction")
+    if si:
+        msgs.append({"role": "system", "content": "".join(p.get("text", "") for p in si.get("parts", []))})
+    pending = []  # tool call ids still waiting for a response, in order
+    n = 0
+    for c in body.get("contents", []):
+        parts = c.get("parts", [])
+        if c.get("role") == "model":
+            calls, text = [], "".join(p.get("text", "") for p in parts if "text" in p)
+            for p in parts:
+                if "functionCall" in p:
+                    fc = p["functionCall"]
+                    n += 1
+                    cid = fc.get("id") or f"call_{n}"
+                    fc["id"] = cid
+                    pending.append(cid)
+                    calls.append({"id": cid, "type": "function", "function": {"name": fc.get("name", ""), "arguments": json.dumps(fc.get("args") or {})}})
+            m = {"role": "assistant", "content": text or None}
+            if calls:
+                m["tool_calls"] = calls
+            msgs.append(m)
+        else:
+            fr = [p["functionResponse"] for p in parts if "functionResponse" in p]
+            for r in fr:
+                cid = r.get("id") or (pending.pop(0) if pending else f"call_{n}")
+                if cid in pending:
+                    pending.remove(cid)
+                msgs.append({"role": "tool", "tool_call_id": cid, "content": str((r.get("response") or {}).get("result", ""))})
+            text = "".join(p.get("text", "") for p in parts if "text" in p)
+            if text:
+                msgs.append({"role": "user", "content": text})
+    out = {"model": env("LLM_ROUTER_MODEL", "auto"), "messages": msgs}
+    decls = [d for t in body.get("tools", []) for d in t.get("functionDeclarations", [])]
+    if decls:
+        out["tools"] = [{"type": "function", "function": {"name": d["name"], "description": d.get("description", ""),
+                         "parameters": _oa_schema(d.get("parameters") or {"type": "OBJECT", "properties": {}})}} for d in decls]
+    return out
+
+
+def _from_openai(d: dict) -> dict:
+    msg = ((d.get("choices") or [{}])[0].get("message")) or {}
+    parts = []
+    if msg.get("content"):
+        parts.append({"text": msg["content"]})
+    for tc in msg.get("tool_calls") or []:
+        f = tc.get("function") or {}
+        try:
+            args = json.loads(f.get("arguments") or "{}")
+        except ValueError:
+            args = {}
+        parts.append({"functionCall": {"id": tc.get("id"), "name": f.get("name", ""), "args": args if isinstance(args, dict) else {}}})
+    return {"candidates": [{"content": {"role": "model", "parts": parts}}], "_via": d.get("model", "router")}
+
+
+def router_call(body: dict, timeout: float = 30) -> dict | None:
+    url, key = env("LLM_ROUTER_URL").rstrip("/"), env("LLM_ROUTER_KEY")
+    if not url or not key or time.time() < _ROUTER_DOWN["until"]:
+        return None
+    try:
+        r = _http.post(url + "/chat/completions", headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+                       content=json.dumps(_to_openai(body)), timeout=timeout)
+    except httpx.HTTPError as e:
+        log.warning("router unreachable: %s", e)
+        _ROUTER_DOWN["until"] = time.time() + 60
+        return None
+    if r.status_code != 200:
+        log.warning("router HTTP %s: %s", r.status_code, r.text[:200])
+        if r.status_code in (401, 403, 404):
+            _ROUTER_DOWN["until"] = time.time() + 300
+        return None
+    out = _from_openai(r.json())
+    return out if out["candidates"][0]["content"]["parts"] else None
+
+
+def llm(body: dict) -> dict:
+    """Router first (many free providers), Gemini direct as the safety net."""
+    t0 = time.time()
+    d = router_call(body, timeout=25)
+    if d is not None:
+        return d
+    return gemini(body, budget=max(12, 44 - (time.time() - t0)))
+
+
+def _ddg_search(query: str) -> str:
+    r = _http.get("https://html.duckduckgo.com/html/", params={"q": query}, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    import re as _re
+    import html as _html
+    items = _re.findall(r'class="result__a"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>', r.text, _re.S)
+    clean = lambda t: _html.unescape(_re.sub(r"<[^>]+>", "", t)).strip()
+    return "\n".join(f"- {clean(a)}: {clean(b)}" for a, b in items[:6])
+
+
 def tool_web_search(query: str) -> str:
-    d = gemini({"contents": [{"role": "user", "parts": [{"text": query}]}], "tools": [{"google_search": {}}]})
-    parts = (d.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
-    return "".join(p.get("text", "") for p in parts)[:3500] or "Nothing found."
+    try:
+        d = gemini({"contents": [{"role": "user", "parts": [{"text": query}]}], "tools": [{"google_search": {}}]})
+        parts = (d.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+        txt = "".join(p.get("text", "") for p in parts)[:3500]
+        if txt:
+            return txt
+    except Exception as e:
+        log.warning("google search grounding failed: %s", e)
+    try:
+        res = _ddg_search(query)
+        if res:
+            return "Web results (DuckDuckGo):\n" + res
+    except Exception as e:
+        log.warning("ddg search failed: %s", e)
+    return "Web search is unavailable right now."
 
 
 def tool_gmail_unread(max_results: int = 5) -> str:
@@ -802,8 +924,8 @@ def chat(body: ChatIn):
     try:
         for _ in range(6):
             tr.step("think", "Thinking")
-            d = gemini({"systemInstruction": {"parts": [{"text": system_prompt(pc)}]}, "contents": contents,
-                        "tools": [{"functionDeclarations": decls}]})
+            d = llm({"systemInstruction": {"parts": [{"text": system_prompt(pc)}]}, "contents": contents,
+                     "tools": [{"functionDeclarations": decls}]})
             cand = (d.get("candidates") or [{}])[0]
             content = cand.get("content") or {"role": "model", "parts": []}
             parts = content.get("parts", [])
@@ -836,7 +958,10 @@ def chat(body: ChatIn):
                     except Exception as e:
                         out = f"Error: {e}"
                     actions.append({"tool": name, "args": args, "result": str(out)[:300]})
-                resp_parts.append({"functionResponse": {"name": name, "response": {"result": str(out)[:6000]}}})
+                fr = {"name": name, "response": {"result": str(out)[:6000]}}
+                if c.get("id"):
+                    fr["id"] = c["id"]
+                resp_parts.append({"functionResponse": fr})
             if stop:
                 break
             contents.append({"role": "user", "parts": resp_parts})
