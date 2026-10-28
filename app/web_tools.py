@@ -23,7 +23,7 @@ def open_website(site: str) -> str:
     key = site.lower().strip()
     url = SITES.get(key) or (site if site.startswith("http") else f"https://{site}")
     webbrowser.open(url)
-    return f"{url} khol diya."
+    return f"Opened {url}."
 
 
 def google_search(query: str) -> str:
@@ -33,7 +33,7 @@ def google_search(query: str) -> str:
         query: What to search.
     """
     webbrowser.open("https://www.google.com/search?q=" + urllib.parse.quote(query))
-    return f"Google par '{query}' search kar diya."
+    return f"Searched Google for '{query}'."
 
 
 def play_youtube(query: str) -> str:
@@ -43,12 +43,12 @@ def play_youtube(query: str) -> str:
         query: Song or video to find.
     """
     webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(query))
-    return f"YouTube par '{query}' khol diya."
+    return f"Opened YouTube results for '{query}'."
 
 
 def get_datetime() -> str:
     """Get current local date, day and time."""
-    return datetime.now().strftime("Aaj %A, %d %B %Y hai, time %I:%M %p")
+    return datetime.now().strftime("Today is %A, %d %B %Y, %I:%M %p")
 
 
 WEB_TOOLS = [open_website, google_search, play_youtube, get_datetime]  # WhatsApp lives in whatsapp_tools.py

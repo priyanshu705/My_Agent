@@ -22,9 +22,9 @@ def _wrap(fn):
     def guarded(*args, **kwargs):
         values = list(args) + list(kwargs.values())
         if name in _CHECK_ARGS and any(isinstance(v, str) and _SHELL_CHARS.search(v) for v in values):
-            return "Ye naam/link safe nahi laga (special characters hain), isliye roka."
+            return "This name or link looks unsafe (special characters), so it was blocked."
         if name == "open_file" and values and isinstance(values[0], str) and values[0].lower().endswith(_RISKY_EXT):
-            return "Program/script files remote se kholna blocked hai. Document ya folder bolo."
+            return "Opening program or script files remotely is blocked. Ask for a document or folder instead."
         return fn(*args, **kwargs)
 
     return guarded

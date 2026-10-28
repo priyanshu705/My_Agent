@@ -60,22 +60,22 @@ def open_app(app_name: str) -> str:
         app_name: Name of the app to open, as the user said it.
     """
     if not IS_WINDOWS:
-        return f"(Demo) '{app_name}' would open on Windows. Ye PC Windows nahi hai."
+        return f"(Demo) '{app_name}' would open on Windows. This PC is not running Windows."
     name = app_name.lower().strip()
     target = APP_ALIASES.get(name)
     try:
         if target:
             os.startfile(target) if target.endswith(":") else subprocess.Popen(f'start "" {target}', shell=True)
-            return f"{app_name} khol diya."
+            return f"Opened {app_name}."
         # Fallback: search Start Menu shortcuts
         for lnk in _start_menu_shortcuts():
             if name in lnk.stem.lower():
                 os.startfile(str(lnk))
-                return f"{lnk.stem} khol diya."
+                return f"Opened {lnk.stem}."
         subprocess.Popen(f'start "" "{app_name}"', shell=True)
         return f"{app_name} kholne ki koshish ki."
     except Exception as e:
-        return f"{app_name} nahi khul paaya: {e}"
+        return f"Could not open {app_name}: {e}"
 
 
 def close_app(app_name: str) -> str:
@@ -95,7 +95,7 @@ def close_app(app_name: str) -> str:
                 closed += 1
             except Exception:
                 pass
-    return f"{app_name} band kar diya ({closed} process)." if closed else f"{app_name} chal hi nahi raha tha."
+    return f"Closed {app_name} ({closed} process)." if closed else f"{app_name} was not running."
 
 
 def list_running_apps() -> str:
@@ -130,7 +130,7 @@ def search_files(query: str, max_results: int = 10) -> str:
             if len(found) >= max_results or time.time() - start > 8:
                 break
     if not found:
-        return f"'{query}' naam ki koi file nahi mili."
+        return f"No file named '{query}' was found."
     return "Mili files:\n" + "\n".join(found)
 
 
@@ -142,11 +142,11 @@ def open_file(path: str) -> str:
     """
     p = Path(path).expanduser()
     if not p.exists():
-        return f"Ye path exist nahi karta: {path}"
+        return f"This path does not exist: {path}"
     if not IS_WINDOWS:
         return f"(Demo) {p} Windows par khulta."
     os.startfile(str(p))
-    return f"{p.name} khol diya."
+    return f"Opened {p.name}."
 
 
 def list_folder(folder: str = "Downloads") -> str:
@@ -159,7 +159,7 @@ def list_folder(folder: str = "Downloads") -> str:
     if not p.is_absolute():
         p = HOME / folder
     if not p.exists():
-        return f"Folder nahi mila: {p}"
+        return f"Folder not found: {p}"
     items = sorted(p.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:40]
     return f"{p} mein (latest pehle):\n" + "\n".join(("[DIR] " if i.is_dir() else "") + i.name for i in items)
 
@@ -183,9 +183,9 @@ def set_volume(level: int) -> str:
         iface = dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
         vol = cast(iface, POINTER(IAudioEndpointVolume))
         vol.SetMasterVolumeLevelScalar(level / 100, None)
-        return f"Volume {level}% kar diya."
+        return f"Volume set to {level}%."
     except Exception as e:
-        return f"Volume set nahi hua: {e}"
+        return f"Could not set the volume: {e}"
 
 
 def mute_volume(mute: bool = True) -> str:
@@ -198,7 +198,7 @@ def mute_volume(mute: bool = True) -> str:
         return "(Demo) mute toggle."
     import pyautogui
     pyautogui.press("volumemute")
-    return "Mute/unmute kar diya."
+    return "Mute setting changed."
 
 
 def take_screenshot() -> str:
@@ -208,9 +208,9 @@ def take_screenshot() -> str:
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         path = SCREENSHOT_DIR / f"screenshot_{datetime.now():%Y%m%d_%H%M%S}.png"
         ImageGrab.grab().save(path)
-        return f"Screenshot save ho gaya: {path}"
+        return f"Screenshot saved: {path}"
     except (Exception, SystemExit) as e:
-        return f"Screenshot nahi le paaya: {e}"
+        return f"Could not take a screenshot: {e}"
 
 
 def lock_screen() -> str:
@@ -247,9 +247,9 @@ def type_text(text: str) -> str:
         time.sleep(1.5)  # time to focus the target window
         pyperclip.copy(text)
         pyautogui.hotkey("ctrl", "v")
-        return "Text type kar diya."
+        return "Text typed."
     except (Exception, SystemExit) as e:
-        return f"Type nahi ho paaya: {e}"
+        return f"Could not type the text: {e}"
 
 
 def press_keys(keys: str) -> str:
@@ -263,9 +263,9 @@ def press_keys(keys: str) -> str:
         combo = [k.strip().lower().replace("windows", "win") for k in keys.split("+")]
         time.sleep(1)
         pyautogui.hotkey(*combo)
-        return f"{keys} daba diya."
+        return f"Pressed {keys}."
     except (Exception, SystemExit) as e:
-        return f"Keys nahi daba paaya: {e}"
+        return f"Could not press the keys: {e}"
 
 
 PC_TOOLS = [open_app, close_app, list_running_apps, search_files, open_file, list_folder,
