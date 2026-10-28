@@ -139,3 +139,17 @@ Write a normal Python function with type hints and a docstring in any `*_tools.p
 * The server only listens on `127.0.0.1`, so nobody else on your network can control your PC.
 * No files or emails are ever deleted. Cancelling a calendar event and every other risky action needs your confirmation.
 * Keep `.env` private. It is already in `.gitignore`.
+
+## Power features (all optional, all off by default)
+
+Install once: `pip install -r requirements-extra.txt`, then switch on what you want in `.env`.
+
+| Setting | What it adds | Safety |
+|---|---|---|
+| `LLM_ROUTER_URL` + `LLM_ROUTER_KEY` | Free multi-provider brain with automatic failover; Gemini stays as the backup | no tools are added |
+| `BROWSER_AGENT=1` | `browser_task`: one request does multi-step shopping / ticket / job research (browser-use) | buttons like Place order, Pay, Book, Submit, Apply are refused in code; password/card/OTP fields never typed; only known shopping/booking/job sites; you confirm the final click as before |
+| `WINDOWS_MCP=1` | See and operate any Windows app (Windows-MCP). Needs `uv` | only Snapshot, Click, Type, Scroll, Shortcut, App, Wait are started (no PowerShell, registry, files, processes); click/type/shortcut ask you first; pay/send/submit buttons and password/card fields refused; Enter is never pressed |
+| `KOKORO_TTS=1` | Free offline Hindi voice (English voice already exists in the UI) | local only |
+| `WAKEWORD_ENGINE=openwakeword` | Offline wake word instead of Chrome cloud speech | mic audio stays on the PC; pretrained phrase is English ("hey jarvis") and similar sounds can trigger it. For "hey agent", train your own model and set `OWW_MODEL` |
+
+Not added on purpose: playwright-mcp. The agent already has its own Playwright tools and browser-use, so a third browser controller would only add overlap and more tools for the model to confuse. Tests are in `tests/` (see `tests/README.md`).

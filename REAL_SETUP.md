@@ -36,3 +36,9 @@ After a reboot, get the new link from `data\phone_link.txt` or Settings at `http
 - [ ] To-do and notes added from the panel show up when you ask the agent for them
 - [ ] Close the tunnel window: the phone shows "PC offline"; start it again and reconnect with the new link
 - [ ] Restart the PC (with autostart on): the agent is back and `data\phone_link.txt` has a new link
+
+## Power features (all optional, all off by default)
+
+Install once: `pip install -r requirements-extra.txt`, then switch on what you want in `.env`.
+
+See README.md for the full table.
