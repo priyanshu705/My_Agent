@@ -1,0 +1,14 @@
+export type Role = "user" | "bot" | "sys";
+export type ToolAction = { tool: string; args?: Record<string, unknown>; result?: string };
+export type Confirm = { tool: string; args: Record<string, unknown> };
+export type Msg = { id: string; role: Role; text: string; at: string; actions?: ToolAction[]; confirm?: Confirm | null; pendingJob?: number | null };
+export type Step = { phase: string; tool?: string; label: string; ms: number };
+export type Activity = { phase: string; tool?: string; label?: string; steps: Step[]; done: boolean };
+export type Session = { id: string; title: string; updated: string };
+export type Todo = { i: number; task: string; done: boolean };
+export type Note = { text: string; at: string };
+export type Reminder = { text: string; due: string };
+export type CalEvent = { title: string; day: string; time: string; location?: string };
+export type Mail = { from: string; subject: string; snippet: string };
+export type Settings = { name: string; voice: string; rate: number; speak: boolean; convo: boolean; srLang: string; accent: string; showTools: boolean };
+export type UiState = "idle" | "listening" | "thinking" | "speaking";
