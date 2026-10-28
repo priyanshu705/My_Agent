@@ -377,6 +377,23 @@ function speakBrowser(text, token) {
     speechSynthesis.speak(u);
   });
 }
+async function speakLocalHindi(text, token) {
+  const chunks = splitSentences(text);
+  const fetchClip = (t) => fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) })
+    .then(async (r) => { if (!r.ok) throw new Error("tts " + r.status); return r.arrayBuffer(); });
+  ttsCtx = ttsCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (ttsCtx.state === "suspended") ttsCtx.resume();
+  let next = fetchClip(chunks[0]);
+  for (let i = 0; i < chunks.length; i++) {
+    const data = await next;
+    if (token !== ttsToken) return;
+    if (i + 1 < chunks.length) { next = fetchClip(chunks[i + 1]); next.catch(() => {}); }
+    const buf = await ttsCtx.decodeAudioData(data);
+    await playSamples(buf.getChannelData(0), buf.sampleRate, token);
+    if (token !== ttsToken) return;
+  }
+}
+
 async function speak(text) {
   if (!S.speak) return;
   const clean = cleanForSpeech(text);
@@ -389,6 +406,9 @@ async function speak(text) {
     if (wantsKokoro() && !devanagari && kokoro.state === "ready") {
       try { await speakKokoro(clean, token); }
       catch (e) { console.warn("Kokoro speak failed", e); if (token === ttsToken) await speakBrowser(clean, token); }
+    } else if (devanagari && cfg && cfg.local_tts) {
+      try { await speakLocalHindi(clean, token); }
+      catch (e) { console.warn("Local Hindi voice failed", e); if (token === ttsToken) await speakBrowser(clean, token); }
     } else {
       if (wantsKokoro() && kokoro.state === "idle") loadKokoro();
       await speakBrowser(clean, token);
@@ -470,8 +490,27 @@ function captureCommand() {
   rec.start();
 }
 
+let wakeSeq = null, wakePoll = null;
+function pollOfflineWake() {
+  if (wakePoll) return;
+  wakePoll = setInterval(async () => {
+    if (!wakeMode) return;
+    try {
+      const w = await api("/api/wake").then((r) => r.json());
+      if (wakeSeq === null) { wakeSeq = w.seq; return; }
+      if (w.seq !== wakeSeq) {
+        wakeSeq = w.seq;
+        if (speaking || capturing || busy) return;
+        stopRec();
+        speak("Yes, I'm listening.").then(captureCommand);
+      } else if (w.error) setStatus(w.error);
+    } catch (e) {}
+  }, 600);
+}
+
 function startWake() {
   if (!canVoice || !wakeMode || speaking || capturing || busy) return;
+  if (cfg.wake_engine === "oww") { stopRec(); setStatus("Say the wake word…", "listening"); pollOfflineWake(); return; }
   stopRec();
   setStatus(`Say "${wakeWord()}"…`, "listening");
   rec = new SR();
