@@ -16,13 +16,15 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://pvaggqiweqsyzurxbzhe.supabase.co").rstrip("/")
@@ -32,6 +34,7 @@ MAX_HISTORY = 14
 TZ = ZoneInfo(os.getenv("TIMEZONE", "Asia/Kolkata"))
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
 
+ROOT = Path(__file__).resolve().parent.parent
 app = FastAPI(title="My_Agent cloud")
 _http = httpx.Client(timeout=25)
 
@@ -638,3 +641,14 @@ def session_messages(sid: str):
 def delete_session(sid: str):
     sb("DELETE", "agent_sessions", {"id": f"eq.{sid}"}, prefer="return=minimal")
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ web UI (served here too, so it works whatever the Vercel preset routes)
+
+@app.get("/")
+def index_page():
+    return FileResponse(ROOT / "index.html")
+
+
+if (ROOT / "static").is_dir():
+    app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
