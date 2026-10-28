@@ -466,23 +466,23 @@ def gemini(body: dict, model: str | None = None) -> dict:
     for m in order[:5]:
         url = GEMINI_BASE + m + ":generateContent"
         for attempt in range(3):
-            r = _http.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"}, content=json.dumps(body), timeout=45)
+            r = _http.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"}, content=json.dumps(body), timeout=14)
             if r.status_code == 200:
                 _GOOD_MODEL["name"] = m
                 return r.json()
             last = r
-            if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
+            if r.status_code in (500, 502, 503, 504) and attempt < 1:
+                time.sleep(1.5)
                 continue
             break
-        if last.status_code not in (404, 400) or ("API key" in last.text):
+        if last.status_code not in (404, 400, 429, 500, 502, 503, 504) or ("API key" in last.text):
             break
     code = last.status_code
     if code == 429:
         raise RuntimeError("Gemini ki free limit abhi poori ho gayi. Thodi der baad try karo.")
     if code in (400, 403) and "API key" in last.text:
         raise RuntimeError("Gemini API key galat hai ya kaam nahi kar rahi. Vercel mein GEMINI_API_KEY check karo.")
-    raise RuntimeError(f"Gemini error {code}: {last.text[:160]}")
+    raise RuntimeError("Gemini abhi busy hai (sab models par load hai). 1 minute baad phir try karo." if code in (500, 502, 503, 504) else f"Gemini error {code}: {last.text[:160]}")
 
 
 def tool_web_search(query: str) -> str:
