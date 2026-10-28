@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://iywzvhaxpnbrfertuxcj.supabase.co").rstrip("/")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://pvaggqiweqsyzurxbzhe.supabase.co").rstrip("/")
 MIN_PIN = 6
 TOKEN_DAYS = 30
 MAX_HISTORY = 14
