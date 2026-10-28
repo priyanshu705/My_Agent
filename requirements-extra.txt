@@ -1,0 +1,17 @@
+# Optional power features. Install only what you turn on in .env:
+#   pip install -r requirements-extra.txt
+# Everything here is off by default; the base agent works without it.
+
+# BROWSER_AGENT=1  - multi-step shopping / ticket / job research (browser-use, MIT). Tested with 0.13.14.
+browser-use==0.13.14
+
+# WINDOWS_MCP=1   - control any Windows app (Windows-MCP, MIT). Needs the `mcp` client here and `uv` installed (https://docs.astral.sh/uv/);
+#                   the Windows-MCP server itself is started on demand with `uvx windows-mcp`, it is not pip-installed.
+mcp>=1.2
+
+# KOKORO_TTS=1    - free offline Hindi voice (Kokoro, Apache-2.0). Downloads ~120 MB of model files on first use.
+kokoro-onnx>=0.4
+
+# WAKEWORD_ENGINE=openwakeword - offline wake word. 0.4.0 bundles its models and runs on onnxruntime (tested version).
+openwakeword==0.4.0
+sounddevice>=0.4
