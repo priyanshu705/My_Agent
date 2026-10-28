@@ -238,3 +238,5 @@ button { cursor: pointer; }
   #badges { display: none; }
 }
 @media (max-height: 520px) { #stage { display: none; } }
+
+.cerr{color:var(--bad);font-size:13px;min-height:18px}.modal-box p{margin:0}.modal-box b{font-size:17px}#connect{z-index:80}

@@ -32,6 +32,7 @@
         <span class="dot" id="statusDot"></span>
         <span id="agentName">Agent</span>
         <span id="badges"></span>
+        <span id="conn" class="badge hidden"></span>
       </div>
       <label class="toggle" id="wakeWrap" title="Hamesha wake word sunta rahe">
         <input type="checkbox" id="wakeToggle">
@@ -147,14 +148,27 @@
       </div>
     </div>
 
+    <div id="disconnectRow" class="row hidden"><span>Is browser ko PC se hatao</span><button id="disconnectBtn" class="small" type="button">Disconnect</button></div>
+
     <div class="phone-box">
-      <b>Phone par kholo (same Wi-Fi)</b>
-      <p id="phoneInfo">ACCESS_PIN set karo .env mein, phir run_phone.bat se start karo.</p>
+      <b>Phone par kholo</b>
+      <p id="phoneInfo">ACCESS_PIN set karo .env mein, phir run_online.bat (internet) ya run_phone.bat (same Wi-Fi) se start karo.</p>
       <div id="phoneRow" class="inline hidden"><input id="phoneUrl" readonly><button class="small" id="copyUrl" type="button">Copy</button></div>
     </div>
   </div>
 </div>
 
+<div id="connect" class="modal hidden" role="dialog" aria-modal="true" aria-label="PC se connect karo">
+  <div class="modal-box">
+    <b>Apne PC se connect karo</b>
+    <p class="muted">PC par run_online.bat chalao. Wahan jo link dikhe use yahan paste karo, phir PIN daalo.</p>
+    <label class="row"><span>PC ka address</span><input id="cUrl" placeholder="https://xxxx.trycloudflare.com" autocapitalize="off" autocorrect="off"></label>
+    <label class="row"><span>PIN</span><input id="cPin" type="password" autocomplete="current-password"></label>
+    <div id="cErr" class="cerr"></div>
+    <button id="cGo" class="primary" type="button">Connect</button>
+    <button id="cDemo" class="ghost" type="button">Bina PC ke demo dekho</button>
+  </div>
+</div>
 <div id="toasts" class="toasts"></div>
 <script src="/static/app.js"></script>
 </body>

@@ -13,6 +13,59 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) 
 const hhmm = (d = new Date()) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
+// ---------- connection (PC backend: same origin, or a tunnel URL when hosted on Vercel) ----------
+let HOSTED = false, API = "", TOKEN = "", online = true;
+const normUrl = (u) => { u = (u || "").trim().replace(/\/+$/, ""); return u && !/^https?:\/\//i.test(u) ? "https://" + u : u; };
+function loadScript(src) { return new Promise((res) => { const s = document.createElement("script"); s.src = src; s.onload = s.onerror = res; document.head.appendChild(s); }); }
+function setOnline(v) {
+  online = v;
+  const c = $("conn"); if (!c) return;
+  const hide = !HOSTED || store.get("demo", false);
+  c.textContent = v ? "PC online" : "PC offline";
+  c.className = "badge " + (v ? "ok" : "warn") + (hide ? " hidden" : "");
+}
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (TOKEN) headers.Authorization = "Bearer " + TOKEN;
+  let r;
+  try { r = await fetch(API + path, { ...opts, headers }); }
+  catch (e) { if (HOSTED) setOnline(false); throw e; }
+  if (HOSTED) setOnline(true);
+  if (r.status === 401) { if (HOSTED) showConnect("Login expire ho gaya, PIN phir se daalo."); else location.href = "/login"; throw new Error("Login chahiye"); }
+  return r;
+}
+function showConnect(msg) {
+  $("cErr").textContent = msg || "";
+  $("cUrl").value = $("cUrl").value || API || "";
+  $("connect").classList.remove("hidden");
+}
+async function doConnect() {
+  const url = normUrl($("cUrl").value), pin = $("cPin").value;
+  if (!url || !pin) return ($("cErr").textContent = "Address aur PIN dono daalo.");
+  $("cErr").textContent = "Connect ho raha hai…"; $("cGo").disabled = true;
+  try {
+    const r = await fetch(url + "/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || "Login nahi hua");
+    store.set("apiBase", url); store.set("token", d.token); store.set("demo", false);
+    location.reload();
+  } catch (e) {
+    $("cErr").textContent = e instanceof TypeError ? "PC tak nahi pahunch paaya. Agent aur tunnel chal rahe hain? Address sahi hai?" : e.message;
+  } finally { $("cGo").disabled = false; }
+}
+async function detectSameOrigin() {
+  try {
+    const r = await api("/api/ping", { cache: "no-store" });
+    if (r.ok && (await r.json()).ok === true) return true;
+  } catch (e) {}
+  return false;
+}
+async function disconnect() {
+  try { await api("/api/logout", { method: "POST" }); } catch (e) {}
+  ["apiBase", "token", "demo"].forEach((k) => store.set(k, k === "demo" ? false : ""));
+  location.reload();
+}
+
 // ---------- state ----------
 let cfg = { agent_name: "Agent", wake_word: "hey agent", recognition_lang: "en-IN", voice_lang: "en-IN" };
 const DEFAULTS = { wake: "", name: "", voice: "", rate: 1.05, speak: null, actions: true, live: false, reduce: false, accent: "cyan" };
@@ -139,7 +192,7 @@ function startActivity() {
   const bar = $("activity"), txt = $("activityText");
   const tick = async () => {
     try {
-      const a = await fetch("/api/activity").then((r) => r.json());
+      const a = await api("/api/activity").then((r) => r.json());
       if (a.tool && S.actions) { bar.classList.remove("hidden"); txt.textContent = `${toolIcon(a.tool)} ${a.tool} chal raha hai…`; }
       else if (S.actions) { bar.classList.remove("hidden"); txt.textContent = "AI soch raha hai…"; }
     } catch (e) {}
@@ -270,8 +323,7 @@ function resumeWake() { if (wakeMode) setTimeout(startWake, 400); else setStatus
 
 // ---------- backend ----------
 async function post(url, body) {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (r.status === 401) { location.href = "/login"; throw new Error("Login chahiye"); }
+  const r = await api(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || r.statusText);
   return data;
@@ -313,7 +365,7 @@ async function confirmAction(approved) {
 async function loadSessions() {
   const list = $("sessionList");
   try {
-    const { sessions } = await fetch("/api/sessions").then((r) => r.json());
+    const { sessions } = await api("/api/sessions").then((r) => r.json());
     list.replaceChildren();
     if (!sessions.length) list.append(el("li", "empty", "Abhi koi chat nahi."));
     sessions.forEach((s) => {
@@ -323,7 +375,7 @@ async function loadSessions() {
       x.addEventListener("click", async (e) => {
         e.stopPropagation();
         if (!confirm("Ye chat delete kar du?")) return;
-        await fetch("/api/sessions/" + encodeURIComponent(s.id), { method: "DELETE" });
+        await api("/api/sessions/" + encodeURIComponent(s.id), { method: "DELETE" });
         if (s.id === SESSION) newChat(); else loadSessions();
       });
       li.append(t, x);
@@ -344,7 +396,7 @@ async function openSession(id) {
   SESSION = id; store.set("sid", id); closeDrawers();
   pendingCard = null;
   try {
-    const { messages } = await fetch("/api/sessions/" + encodeURIComponent(id)).then((r) => r.json());
+    const { messages } = await api("/api/sessions/" + encodeURIComponent(id)).then((r) => r.json());
     chatEl.replaceChildren();
     if (!messages.length) welcome();
     messages.forEach((m, i) => {
@@ -373,11 +425,11 @@ function fmtDue(s) { const d = new Date(s.replace(" ", "T")); return isNaN(d) ? 
 
 async function loadLocal() {
   try {
-    const d = await fetch("/api/dashboard/local").then((r) => r.json());
+    const d = await api("/api/dashboard/local").then((r) => r.json());
     fillList("todoList", d.todos.map((t) => {
       const li = el("li", t.done ? "done" : "");
       const cb = el("input"); cb.type = "checkbox"; cb.checked = t.done;
-      cb.addEventListener("change", async () => { await fetch(`/api/todos/${t.i}/toggle`, { method: "POST" }); loadLocal(); });
+      cb.addEventListener("change", async () => { await api(`/api/todos/${t.i}/toggle`, { method: "POST" }); loadLocal(); });
       li.append(cb, el("span", "grow", t.task)); return li;
     }), "Koi kaam nahi.");
     fillList("noteList", d.notes.map((n) => { const li = el("li"); const g = el("div", "grow", n.text); g.append(el("span", "sub", n.at)); li.append(g); return li; }), "Koi note nahi.");
@@ -397,7 +449,7 @@ function renderBadges(st) {
 }
 async function loadCalendar() {
   try {
-    const d = await fetch("/api/dashboard/calendar").then((r) => r.json());
+    const d = await api("/api/dashboard/calendar").then((r) => r.json());
     if (!d.connected) return fillList("calList", [], "Google connect nahi hai (setup_google.bat).");
     if (d.error) return fillList("calList", [], "Calendar load nahi hua.");
     fillList("calList", d.events.map((e) => { const li = el("li"); li.append(el("span", "when", e.day));
@@ -406,7 +458,7 @@ async function loadCalendar() {
 }
 async function loadMail() {
   try {
-    const d = await fetch("/api/dashboard/mail").then((r) => r.json());
+    const d = await api("/api/dashboard/mail").then((r) => r.json());
     if (!d.connected) return fillList("mailList", [], "Google connect nahi hai (setup_google.bat).");
     if (d.error) return fillList("mailList", [], "Mail load nahi hua.");
     fillList("mailList", d.mails.map((m) => { const li = el("li"); const g = el("div", "grow", m.subject);
@@ -426,7 +478,7 @@ function toast(text) {
 }
 async function pollReminders() {
   try {
-    const r = await fetch("/api/reminders/due").then((x) => x.json());
+    const r = await api("/api/reminders/due").then((x) => x.json());
     for (const text of r.due || []) {
       addMsg("bot", "⏰ Reminder: " + text); toast("⏰ " + text);
       if ("Notification" in window && Notification.permission === "granted") new Notification("Reminder", { body: text });
@@ -480,6 +532,10 @@ $("wakeToggle").addEventListener("change", (e) => {
   wakeMode ? startWake() : (stopRec(), setStatus("Ready"));
 });
 $("newChat").addEventListener("click", newChat);
+$("cGo").addEventListener("click", doConnect);
+$("cPin").addEventListener("keydown", (e) => { if (e.key === "Enter") doConnect(); });
+$("cDemo").addEventListener("click", () => { store.set("demo", true); location.reload(); });
+$("disconnectBtn").addEventListener("click", disconnect);
 $("menuLeft").addEventListener("click", () => openDrawer("left"));
 $("menuRight").addEventListener("click", () => openDrawer("right"));
 $("scrim").addEventListener("click", closeDrawers);
@@ -493,14 +549,29 @@ document.addEventListener("keydown", (e) => {
 });
 
 (async function init() {
-  try { cfg = { ...cfg, ...(await fetch("/api/config").then((r) => r.json())) }; } catch (e) {}
+  // Where is the backend? Same origin (PC / tunnel) or a saved tunnel URL (Vercel).
+  if (!(await detectSameOrigin())) {
+    HOSTED = true; API = store.get("apiBase", ""); TOKEN = store.get("token", "");
+    $("disconnectRow").classList.remove("hidden");
+    if (store.get("demo", false)) await loadScript("/static/demo.js");
+    else if (!API || !TOKEN) {
+      const m = location.hash.match(/connect=([^&]+)/);
+      if (m) { $("cUrl").value = decodeURIComponent(m[1]); history.replaceState(null, "", location.pathname); }
+      showConnect();
+    }
+  }
+  setOnline(true);
+  try { cfg = { ...cfg, ...(await api("/api/config").then((r) => r.json())) }; } catch (e) {}
   bindSettings(); bindForms(); applySettings();
   if (!canVoice) {
     micBtn.classList.add("hidden"); $("wakeWrap").classList.add("hidden");
     if (SR === undefined || SR === null) $("voiceNote").textContent = "Is browser mein voice nahi hai. PC par Chrome ya Edge use karo, ya type karo.";
     $("voiceNote").classList.remove("hidden");
   }
-  if (cfg.phone_url) {
+  if (cfg.tunnel_url) {
+    $("phoneInfo").textContent = "Internet link (Cloudflare tunnel). Ye har baar start par badalta hai. Phone par PC ka UI is link se khulta hai:";
+    $("phoneRow").classList.remove("hidden"); $("phoneUrl").value = (cfg.ui_url || "") + "#connect=" + encodeURIComponent(cfg.tunnel_url);
+  } else if (cfg.phone_url) {
     $("phoneInfo").textContent = "Phone aur PC same Wi-Fi par hon, aur run_phone.bat se start karo. Phir PIN daalo.";
     $("phoneRow").classList.remove("hidden"); $("phoneUrl").value = cfg.phone_url;
   }
@@ -508,11 +579,12 @@ document.addEventListener("keydown", (e) => {
   setState("idle");
   requestAnimationFrame(drawWave);
   await loadSessions();
-  const sess = await fetch("/api/sessions/" + encodeURIComponent(SESSION)).then((r) => r.json()).catch(() => ({ messages: [] }));
+  const sess = await api("/api/sessions/" + encodeURIComponent(SESSION)).then((r) => r.json()).catch(() => ({ messages: [] }));
   if (sess.messages && sess.messages.length) await openSession(SESSION); else welcome();
   loadLocal(); loadCalendar(); loadMail();
   setInterval(loadLocal, 30000); setInterval(loadCalendar, 120000); setInterval(loadMail, 120000);
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
   if (canVoice && store.get("wakeMode")) { $("wakeToggle").checked = true; wakeMode = true; startWake(); }
   setInterval(pollReminders, 30000);
+  setInterval(async () => { if (!HOSTED || store.get("demo", false) || !API) return; try { const r = await fetch(API + "/api/ping", { cache: "no-store" }); setOnline(r.ok); } catch (e) { setOnline(false); } }, 20000);
 })();
