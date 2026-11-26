@@ -1,0 +1,324 @@
+{
+  "axe": [
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "overview",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "chat",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "automation",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "notes",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "tasks",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "reminders",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "memory",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "integrations",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "settings",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "overview",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "chat",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "automation",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "notes",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "tasks",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "reminders",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "memory",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "integrations",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "390x844",
+      "view": "settings",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "overview",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "chat",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "automation",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "notes",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "tasks",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "reminders",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "memory",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "integrations",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "settings",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "overview",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "chat",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "automation",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "notes",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "tasks",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "reminders",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "memory",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "integrations",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "390x844",
+      "view": "settings",
+      "violations": []
+    },
+    {
+      "theme": "light",
+      "vp": "1440x900",
+      "view": "confirmation dialog",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "vp": "1440x900",
+      "view": "confirmation dialog",
+      "violations": []
+    }
+  ],
+  "structure": [
+    {
+      "name": "exactly one <h1> in overview",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in chat",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in automation",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in notes",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in tasks",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in reminders",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in memory",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in integrations",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "exactly one <h1> in settings",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "name": "landmarks: header, nav (Main), main, aside present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "document language is set",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a polite live region announces assistant status",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "keyboard focus has a visible ≥2px outline",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "every image/canvas is decorative or labelled (no unlabeled role=img)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "first Tab stop is the 'Skip to content' link",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "activating the skip link moves focus into the main content",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "reduced motion: no infinite CSS animations are running",
+      "pass": true,
+      "detail": "0 running"
+    },
+    {
+      "name": "200% text size at 320px: no horizontal scrolling (WCAG 1.4.4 / 1.4.10)",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

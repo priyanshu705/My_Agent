@@ -1,0 +1,962 @@
+[
+  {
+    "vp": "320x568",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 7,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 7,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "375x812",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 5,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 7,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "390x844",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 5,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 7,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "430x932",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 6,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 8,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 12,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 8,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1024x768",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 17,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 8,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1366x768",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 17,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 8,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 22,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "overview",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "chat",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 8,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "automation",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "notes",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "tasks",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 4,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "reminders",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 0,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "memory",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "integrations",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1920x1080",
+    "view": "settings",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 23,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "overview (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "chat (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 5,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "tasks (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 2,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "memory (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "320x568",
+    "view": "automation (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "overview (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "chat (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 5,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "tasks (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 2,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "memory (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "768x1024",
+    "view": "automation (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "overview (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 3,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "chat (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 5,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "tasks (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 2,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "memory (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 1,
+    "errors": [],
+    "pass": true
+  },
+  {
+    "vp": "1440x900",
+    "view": "automation (empty data)",
+    "overflowX": false,
+    "clipped": [],
+    "small24": [],
+    "small44": 10,
+    "errors": [],
+    "pass": true
+  }
+]

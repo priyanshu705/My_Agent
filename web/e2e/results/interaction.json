@@ -1,0 +1,596 @@
+[
+  {
+    "section": "Local PC mode",
+    "name": "no login screen when the PC backend lets the PC in",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "header says PC connected (not 'PC offline')",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "greeting uses the configured user name",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "overview shows model name from /api/config",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "overview shows Voice 'Available'",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "integrations tile counts only real flags",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "Create a note opens a dialog and focuses its field",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "note saved through POST /api/notes",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "dialog closed and focus returned to the trigger",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "reminder saved through POST /api/reminders with minutes",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "Search Google opens Chat with a pre-filled draft (nothing sent yet)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "Open Chrome sends an ordinary chat message",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Local PC mode",
+    "name": "no page errors in local mode basics",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "empty chat shows the voice hero and suggestions",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "Shift+Enter adds a new line instead of sending",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "Enter sends the multiline message",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "assistant reply is rendered with a timestamp",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "Copy response puts the reply on the clipboard",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "tool chip appears for an executed tool",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "backend error reply is shown as a failed request",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "Reset asks first and focuses the safe option",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "Reset calls POST /api/reset and clears the chat",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "New chat starts an empty conversation",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "opening a stored conversation loads its history",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "a failed tool in history is flagged",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "deleting a conversation calls DELETE /api/sessions/{id}",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Chat workspace",
+    "name": "no page errors in chat",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "a pending action opens a global alert dialog",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "dialog states the intent, the affected application and the risk",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "focus starts on Cancel (the safe choice)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "keyboard focus stays trapped inside the dialog",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "the chat bubble has no second set of approve buttons",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "Escape cancels: POST /api/confirm approved=false with the server-issued id",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "dialog closed afterwards",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "email confirmation lists recipient, subject and body",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "Confirm sends approved=true with the matching id",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "result is reported only after the backend answered",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "WhatsApp confirmation names the contact and message",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "Automation lists the approved action as Completed and the cancelled as absent",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Confirmations (risky actions)",
+    "name": "no page errors in confirmations",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "local /api/activity shape does not crash the UI (regression)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "chat shows a live status while a tool runs",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "Automation shows the current task with the tool name",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "history lists completed and failed executions",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "category filter narrows the list to WhatsApp",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "Overview 'Recent activity' mirrors the real log",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "cloud-mode step list is shown while running",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Automation center and activity",
+    "name": "no page errors in cloud activity",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "adding a note posts it and lists it",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "note search filters the list",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "notes show their creation date",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "tasks split into pending and completed",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "toggling a task calls the toggle endpoint",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "adding a task posts it",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "reminders separate due from upcoming",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "adding a reminder sends the chosen minutes",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "memory lists the saved facts from GET /api/memory",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "memory search filters facts",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "'Teach the assistant' opens chat with a draft, nothing is sent",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Notes, tasks, reminders, memory",
+    "name": "no page errors in productivity views",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Integrations",
+    "name": "Google shows 'Needs authorization' with a Connect button",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Integrations",
+    "name": "no secret-looking values are rendered anywhere",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Integrations",
+    "name": "Re-check re-queries the backend and shows the time",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Integrations",
+    "name": "demo mode, disabled, enabled and error states are all distinguishable",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Integrations",
+    "name": "an engine error message is shown",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Integrations",
+    "name": "quick action WhatsApp is disabled with a reason when not set up",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "settings has the required sections",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "restart-needed options are labelled as such",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "model name is shown read-only",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "light is the default theme",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "Dark theme applies and is saved",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "theme survives a reload with no flash of the wrong theme",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "System follows the OS colour scheme",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "…and switches back when the OS changes",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "changing the name updates the greeting",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "Delete all asks first (danger dialog)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "it deletes every stored conversation via DELETE",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Settings and appearance",
+    "name": "no page errors in settings",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "Listening is shown only once the recognizer started",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "Stop returns to Idle",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "permission denied is shown, never 'Listening'",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "a missing microphone shows 'unavailable'",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "no speech recognition: Talk is disabled and explains why",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "wake word reports Active only when its recognizer started",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Voice and microphone states",
+    "name": "wake word with a blocked microphone is NOT shown as active",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "cloud mode: PC offline is reported from the cloud status",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "PC-only quick actions are disabled with a reason",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "cloud mode: WhatsApp is 'Not reported' (the cloud always says false) instead of a false 'Needs setup'",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "memory says it is unavailable when the backend has no /api/memory",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "cloud mode requires sign-in",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "a wrong PIN shows an accessible error",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "the right PIN opens the app",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "sign out returns to the login screen",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Cloud mode, login and offline",
+    "name": "an unreachable backend shows Offline, not Ready",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Mobile navigation",
+    "name": "closed mobile sidebar is inert (not focusable, not read by screen readers)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Mobile navigation",
+    "name": "menu opens and moves focus inside the drawer",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Mobile navigation",
+    "name": "Escape closes the drawer and returns focus to the menu button",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Mobile navigation",
+    "name": "choosing a destination closes the drawer and loads the view",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Mobile navigation",
+    "name": "a mic button is in the top bar on mobile",
+    "pass": true,
+    "detail": ""
+  }
+]
