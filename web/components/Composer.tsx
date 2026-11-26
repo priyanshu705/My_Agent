@@ -7,7 +7,7 @@ import { voice } from "@/lib/voice";
 const SUGGEST = ["What's on my schedule today?", "Search the latest tech news", "Open redBus and find buses Indore to Mumbai", "Add a reminder in 30 minutes"];
 
 export default function Composer() {
-  const { send, busy, ui, toggleMic, msgs, voiceStatus } = useStore();
+  const { send, busy, ui, toggleMic, msgs, voiceStatus, settings, cfg } = useStore();
   const [text, setText] = useState("");
   const submit = () => { const t = text.trim(); if (!t) return; setText(""); void send(t); };
   const listening = ui === "listening";
@@ -19,6 +19,7 @@ export default function Composer() {
             {SUGGEST.map((s) => <button key={s} onClick={() => void send(s)} className="rounded-full hairline bg-white/[.04] px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/10 hover:text-white">{s}</button>)}
           </div>
         )}
+        {settings.wake && ui === "idle" && !busy && <p className="mb-1 text-center text-[11px] text-accent/80" role="status">Listening for "{settings.wakeWord || cfg.wake_word || "hey agent"}"…</p>}
         {voiceStatus && <p className="mb-1 text-center text-[11px] text-amber-300/80">{voiceStatus}</p>}
         <div className="glass-strong flex items-end gap-2 rounded-2xl p-2 focus-within:border-accent/50 transition">
           <button onClick={() => void toggleMic()} aria-label={listening ? "Stop listening" : "Start voice"} aria-pressed={listening} disabled={!voice.canListen && !listening}

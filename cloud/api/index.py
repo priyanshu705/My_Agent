@@ -23,8 +23,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://pvaggqiweqsyzurxbzhe.supabase.co").rstrip("/")
@@ -1163,8 +1162,5 @@ def delete_session(sid: str):
 
 @app.get("/")
 def index_page():
-    return FileResponse(ROOT / "index.html")
-
-
-if (ROOT / "static").is_dir():
-    app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+    """This deployment is API-only: the UI is the Next.js app in web/, hosted separately."""
+    return RedirectResponse(env("UI_URL") or "https://my-agent-ui-three.vercel.app", status_code=307)

@@ -172,6 +172,39 @@ class VoiceEngine {
     try { rec.start(); return true; } catch { this.rec = null; this.closeMic(); return false; }
   }
   stopListening() { this.listenTok++; const r = this.rec; this.rec = null; if (r) { r.onend = null; try { r.abort(); } catch {} } this.closeMic(); }
+  // ---- wake word (browser engine): continuous recognizer that waits for the wake phrase ----
+  private wakeRec: SR | null = null;
+  private wakeTok = 0;
+  get waking() { return !!this.wakeRec; }
+  static wakeVariants(word: string): string[] {
+    const w = VoiceEngine.norm(word || "hey agent"), last = w.split(" ").pop() || w;
+    return [w, w.replace("hey", "hi"), w.replace("hey", "he"), w.replace("hey", "hay"), "हे एजेंट", "हाय एजेंट", "एजेंट", last].filter(Boolean);
+  }
+  static norm(t: string) { return t.toLowerCase().replace(/[.,!?।]/g, "").trim(); }
+  /** Starts waiting for the wake phrase. onHit gets any words spoken right after it ("hey agent open chrome" -> "open chrome"). */
+  startWake(o: { lang: string; word: string; onHit: (after: string) => void }): boolean {
+    const SRC = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SRC || this.wakeRec) return !!this.wakeRec;
+    const tok = ++this.wakeTok; const variants = VoiceEngine.wakeVariants(o.word);
+    const rec: SR = new SRC();
+    rec.lang = o.lang; rec.continuous = true; rec.interimResults = false;
+    rec.onresult = (e: any) => {
+      if (tok !== this.wakeTok) return;
+      const t = VoiceEngine.norm(e.results[e.results.length - 1][0].transcript);
+      const hit = variants.find((v) => t.includes(v)); if (!hit) return;
+      const after = t.slice(t.indexOf(hit) + hit.length).trim();
+      this.stopWake(); o.onHit(after);
+    };
+    rec.onerror = () => {};
+    rec.onend = () => { // recognizers stop on silence: restart unless we were stopped on purpose
+      if (tok !== this.wakeTok) return; this.wakeRec = null;
+      setTimeout(() => { if (tok === this.wakeTok && !this.wakeRec) this.startWake(o); }, 400);
+    };
+    this.wakeRec = rec;
+    try { rec.start(); return true; } catch { this.wakeRec = null; return false; }
+  }
+  stopWake() { this.wakeTok++; const r = this.wakeRec; this.wakeRec = null; if (r) { r.onend = null; try { r.abort(); } catch {} } }
+
   endListening() { try { this.rec?.stop(); } catch {} }
   get listening() { return !!this.rec; }
 

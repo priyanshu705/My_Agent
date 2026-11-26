@@ -21,11 +21,12 @@ function cleanSettings(raw: unknown): Settings {
   const rate = typeof r.rate === "number" && r.rate >= 0.5 && r.rate <= 2 ? r.rate : d.rate;
   const accent = typeof r.accent === "string" && ACCENTS.includes(r.accent) ? r.accent : d.accent;
   return { name: str(r.name, d.name), voice: str(r.voice, d.voice), rate, speak: bool(r.speak, d.speak), convo: bool(r.convo, d.convo),
-    srLang: str(r.srLang, d.srLang, 12), accent, showTools: bool(r.showTools, d.showTools) };
+    srLang: str(r.srLang, d.srLang, 12), accent, showTools: bool(r.showTools, d.showTools),
+    wake: bool(r.wake, d.wake), wakeWord: str(r.wakeWord, d.wakeWord, 40).toLowerCase() };
 }
 const SID_OK = /^[A-Za-z0-9_-]{1,64}$/;
 
-const DEFAULT_SETTINGS: Settings = { name: "", voice: "Sulafat", rate: 1, speak: true, convo: true, srLang: "en-IN", accent: "cyan", showTools: true };
+const DEFAULT_SETTINGS: Settings = { name: "", voice: "Sulafat", rate: 1, speak: true, convo: true, srLang: "en-IN", accent: "cyan", showTools: true, wake: false, wakeWord: "" };
 const IDLE_ACT: Activity = { phase: "idle", steps: [], done: true };
 
 type Toast = { id: string; text: string };
@@ -33,7 +34,7 @@ type Dash = { todos: Todo[]; notes: Note[]; reminders: Reminder[]; calendar: Cal
 
 interface State {
   ready: boolean; authed: boolean; loggingIn: boolean; loginError: string;
-  cfg: { user_name?: string; google_ready?: boolean; google_connected?: boolean; needs_setup?: string[] };
+  cfg: { user_name?: string; wake_word?: string; wake_engine?: string; google_ready?: boolean; google_connected?: boolean; needs_setup?: string[] };
   settings: Settings; sessions: Session[]; sid: string; msgs: Msg[];
   ui: UiState; busy: boolean; activity: Activity; interim: string; voiceStatus: string;
   dash: Dash; pcOnline: boolean; toasts: Toast[]; convoActive: boolean;
@@ -44,13 +45,15 @@ interface State {
   refreshSessions(): Promise<void>; refreshDash(): Promise<void>;
   addTodo(t: string): Promise<void>; toggleTodo(i: number): Promise<void>; addNote(t: string): Promise<void>; addReminder(t: string, minutes: number): Promise<void>;
   toggleMic(): Promise<void>; setSettings(p: Partial<Settings>): void; toast(text: string): void;
-  set(p: Partial<State>): void; playSample(): Promise<void>; connectGoogle(): Promise<void>;
+  syncWake(): void; set(p: Partial<State>): void; playSample(): Promise<void>; connectGoogle(): Promise<void>;
 }
 
 let actTimer: ReturnType<typeof setInterval> | null = null;
 let jobTimer: ReturnType<typeof setInterval> | null = null;
 let dashTimer: ReturnType<typeof setInterval> | null = null;
 let remindTimer: ReturnType<typeof setInterval> | null = null;
+let wakeTimer: ReturnType<typeof setInterval> | null = null;
+let wakeSeq: number | null = null;
 let gen = 0; // bumped on logout / session switch so late responses from the old state are ignored
 let emptyCount = 0;
 
@@ -105,6 +108,34 @@ export const useStore = create<State>((set, get) => {
       },
     });
     if (!ok) set({ convoActive: false, ui: "idle" });
+  };
+
+  // ---- wake word: offline engine (poll /api/wake) or browser recognizer; only active while idle ----
+  const stopWakeLoops = () => { voice.stopWake(); if (wakeTimer) clearInterval(wakeTimer); wakeTimer = null; wakeSeq = null; };
+  const onWake = (after: string) => {
+    stopWakeLoops();
+    if (get().busy || get().ui !== "idle") return;
+    if (after.split(" ").length >= 2) { void get().send(after); return; }
+    set({ ui: "speaking" });
+    void voice.speak("Yes, I'm listening.", { voice: get().settings.voice, rate: get().settings.rate }).then(() => { set({ ui: "idle" }); void listenOnce(); });
+  };
+  const syncWake = () => {
+    const st = get();
+    const want = st.settings.wake && st.authed && st.ready && st.ui === "idle" && !st.busy && !st.convoActive && voice.canListen;
+    if (!want) { stopWakeLoops(); return; }
+    if (st.cfg.wake_engine === "oww") {
+      if (wakeTimer) return; voice.stopWake();
+      wakeTimer = setInterval(async () => {
+        try {
+          const w = await api<{ seq: number; error?: string }>("/api/wake", { timeout: 4000 });
+          if (!wakeTimer) return; // stopped while the request was in flight
+          if (wakeSeq === null) { wakeSeq = w.seq; return; }
+          if (w.seq !== wakeSeq) { wakeSeq = w.seq; onWake(""); }
+        } catch { /* transient */ }
+      }, 600);
+    } else if (!voice.waking) {
+      voice.startWake({ lang: st.settings.srLang, word: st.settings.wakeWord || st.cfg.wake_word || "hey agent", onHit: onWake });
+    }
   };
 
   const stopJob = () => { if (jobTimer) clearInterval(jobTimer); jobTimer = null; };
@@ -168,6 +199,7 @@ export const useStore = create<State>((set, get) => {
     dash: { todos: [], notes: [], reminders: [], calendar: [], mail: [], calendarConnected: false, mailConnected: false },
     pcOnline: false, toasts: [], convoActive: false, settingsOpen: false, sidebarOpen: false, tab: "chat",
     set: (p) => set(p as any),
+    syncWake,
 
     toast: (text) => {
       const id = uid(); set((s) => ({ toasts: [...s.toasts, { id, text }].slice(-4) }));
@@ -178,17 +210,21 @@ export const useStore = create<State>((set, get) => {
       const s = { ...get().settings, ...p }; ls.set("settings", s); set({ settings: s });
       if (typeof document !== "undefined") document.documentElement.dataset.accent = s.accent;
       if (p.voice !== undefined) voice.resetFailure();
+      if (p.wake !== undefined || p.wakeWord !== undefined || p.srLang !== undefined) { voice.stopWake(); get().syncWake(); }
     },
 
     init: async () => {
       const settings = cleanSettings(ls.get<unknown>("settings", {}));
       document.documentElement.dataset.accent = settings.accent;
       let sid = ls.get<string>("sid", ""); if (typeof sid !== "string" || !SID_OK.test(sid)) { sid = uid(); ls.set("sid", sid); }
-      setAuthLostHandler(() => { gen++; stopJob(); stopTimers(); voice.stop(); voice.stopListening(); setToken(""); set({ authed: false, loginError: "Your session expired. Please sign in again.", busy: false, ui: "idle" }); stopActivity(); });
+      setAuthLostHandler(() => { gen++; stopJob(); stopTimers(); stopWakeLoops(); voice.stop(); voice.stopListening(); setToken(""); set({ authed: false, loginError: "Your session expired. Please sign in again.", busy: false, ui: "idle" }); stopActivity(); });
       set({ settings, sid });
       try { const cfg = await api("/api/config", { timeout: 15000 }); set({ cfg }); } catch {}
       if (getToken()) {
         try { await api("/api/sessions", { timeout: 15000 }); set({ authed: true }); } catch (e) { if (!(e instanceof AuthError)) set({ authed: true }); }
+      } else {
+        // The PC backend lets the PC itself in without a PIN: if it answers without a token, skip the login screen.
+        try { const r = await fetch("/api/sessions", { cache: "no-store" }); if (r.ok) set({ authed: true }); } catch { /* offline: show login */ }
       }
       set({ ready: true });
       if (get().authed) {
@@ -209,7 +245,7 @@ export const useStore = create<State>((set, get) => {
         startTimers();
       } catch (e: any) { set({ loggingIn: false, loginError: e?.message || "Sign-in failed." }); }
     },
-    logout: () => { gen++; setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); set({ authed: false, msgs: [], convoActive: false, ui: "idle" }); },
+    logout: () => { gen++; setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); stopWakeLoops(); set({ authed: false, msgs: [], convoActive: false, ui: "idle" }); },
 
     refreshSessions: async () => { try { const r = await api<{ sessions: Session[] }>("/api/sessions"); set({ sessions: r.sessions }); } catch {} },
     refreshDash: async () => {
@@ -287,3 +323,9 @@ export const useStore = create<State>((set, get) => {
   };
 });
 export { apiRaw };
+
+// Wake word only listens while the assistant is idle: re-evaluate whenever one of the relevant states changes.
+useStore.subscribe((s, p) => {
+  if (s.ui !== p.ui || s.busy !== p.busy || s.authed !== p.authed || s.ready !== p.ready || s.convoActive !== p.convoActive
+    || s.settings.wake !== p.settings.wake || s.cfg !== p.cfg) s.syncWake();
+});

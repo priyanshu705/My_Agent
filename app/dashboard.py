@@ -1,6 +1,6 @@
 """UI support: chat history, dashboard data, live tool activity, and PIN login for phone access.
 
-Nothing here is an AI tool. It only feeds the web UI in static/.
+Nothing here is an AI tool. It only feeds the web UI in web/.
 """
 
 import hmac

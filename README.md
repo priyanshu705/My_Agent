@@ -28,13 +28,13 @@ Risky actions (closing apps, typing, pressing keys, locking the screen, sending 
 3. Download this repo: **Code → Download ZIP**, then extract it (or `git clone`).
 4. Double-click **`run.bat`**.
    * The first run installs everything and opens a `.env` file in Notepad. Paste your key after `GEMINI_API_KEY=`, save, and close it.
-   * Double-click `run.bat` again. The agent opens at **http://localhost:8000**.
+   * Double-click `run.bat` again. The first run also builds the web UI (needs [Node.js 18+](https://nodejs.org); without it, a page explains how and links to the hosted UI). The agent opens at **http://localhost:8000**.
 5. Open it in **Chrome or Edge** and allow microphone access.
 
 ### How to use it
 
 * Press the 🎤 button and speak, or
-* Turn on **"hey agent" sunte raho**, keep the tab open, and say *"Hey Agent, Chrome khol do"*.
+* Open **Settings → Wake word** and switch it on, keep the tab open, and say *"Hey Agent, Chrome khol do"*.
 * You can also type in the box.
 
 ### No API key yet? Demo mode
@@ -117,7 +117,7 @@ app/
   whatsapp_tools.py WhatsApp Web: send, files, read, schedule (Phase 3)
   contacts_tools.py Saved contacts + Google Contacts lookup
   demo_agent.py    Offline demo brain (no API key)
-static/            Web UI (voice in/out, wake word)
+web/               Web UI (Next.js: voice in/out, wake word). run.bat builds it once into web/out and the agent serves it
 run.bat            One-click start on Windows
 setup_google.bat   One-time Google login for Gmail + Calendar
 setup_whatsapp.bat One-time WhatsApp QR login
