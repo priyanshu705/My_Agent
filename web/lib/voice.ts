@@ -176,15 +176,19 @@ class VoiceEngine {
   private wakeRec: SR | null = null;
   private wakeTok = 0;
   get waking() { return !!this.wakeRec; }
+  /** Set when the browser refused the microphone for the wake word; we then stop retrying until the user changes the setting. */
+  wakeBlocked = "";
+  clearWakeBlock() { this.wakeBlocked = ""; }
   static wakeVariants(word: string): string[] {
     const w = VoiceEngine.norm(word || "hey agent"), last = w.split(" ").pop() || w;
     return [w, w.replace("hey", "hi"), w.replace("hey", "he"), w.replace("hey", "hay"), "हे एजेंट", "हाय एजेंट", "एजेंट", last].filter(Boolean);
   }
   static norm(t: string) { return t.toLowerCase().replace(/[.,!?।]/g, "").trim(); }
   /** Starts waiting for the wake phrase. onHit gets any words spoken right after it ("hey agent open chrome" -> "open chrome"). */
-  startWake(o: { lang: string; word: string; onHit: (after: string) => void }): boolean {
+  startWake(o: { lang: string; word: string; onHit: (after: string) => void; onError?: (err: string) => void }): boolean {
     const SRC = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SRC || this.wakeRec) return !!this.wakeRec;
+    if (!SRC || this.wakeBlocked) return false;
+    if (this.wakeRec) return true;
     const tok = ++this.wakeTok; const variants = VoiceEngine.wakeVariants(o.word);
     const rec: SR = new SRC();
     rec.lang = o.lang; rec.continuous = true; rec.interimResults = false;
@@ -195,7 +199,10 @@ class VoiceEngine {
       const after = t.slice(t.indexOf(hit) + hit.length).trim();
       this.stopWake(); o.onHit(after);
     };
-    rec.onerror = () => {};
+    rec.onerror = (e: any) => {
+      if (tok !== this.wakeTok) return;
+      if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") { this.wakeBlocked = e.error; this.wakeTok++; this.wakeRec = null; o.onError?.(e.error); }
+    };
     rec.onend = () => { // recognizers stop on silence: restart unless we were stopped on purpose
       if (tok !== this.wakeTok) return; this.wakeRec = null;
       setTimeout(() => { if (tok === this.wakeTok && !this.wakeRec) this.startWake(o); }, 400);
