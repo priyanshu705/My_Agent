@@ -3,3 +3,5 @@ node_modules
 .env*.local
 *.tsbuildinfo
 out
+e2e/shots/responsive/
+e2e/shots/a11y/

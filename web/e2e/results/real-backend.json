@@ -1,0 +1,86 @@
+[
+  {
+    "section": "Real backend (demo mode)",
+    "name": "PC UI is served by the backend and needs no login on the PC",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "status is 'PC connected' (mode detected from /api/ping)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "model comes from the real /api/config",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "/api/config exposes integration flags and no secret",
+    "pass": true,
+    "detail": "[\"gemini_key\",\"llm_router\",\"whatsapp_session\",\"browser_agent\",\"desktop_automation\",\"wake_engine_enabled\",\"wake_engine_running\",\"wake_engine_error\"]"
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "a note is saved through the real POST /api/notes and listed",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "a task is created and completed through the real endpoints",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "a reminder appears under Upcoming",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "GET /api/memory works (counts include the new note)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "integration states reflect the real backend (demo = Disabled)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "the real backend's confirmation opens the dialog with a server-issued id",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "cancelling is accepted by the backend and nothing was executed",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "a normal message round-trips through the real /api/chat",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "history is stored: the conversation appears in the sidebar list",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "section": "Real backend (demo mode)",
+    "name": "no page errors against the real backend",
+    "pass": true,
+    "detail": ""
+  }
+]

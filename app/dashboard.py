@@ -172,6 +172,18 @@ def dash_local():
     }
 
 
+@router.get("/api/memory")
+def memory_overview():
+    """Read-only view of what the assistant remembers: saved facts and simple counts (no editing here)."""
+    db = mem._load()
+    todos = db.get("todos", [])
+    return {
+        "facts": list(db.get("facts", [])),
+        "counts": {"notes": len(db.get("notes", [])), "todos_open": sum(1 for t in todos if not t.get("done")),
+                   "facts": len(db.get("facts", []))},
+    }
+
+
 _cache: dict[str, tuple[float, object]] = {}
 
 

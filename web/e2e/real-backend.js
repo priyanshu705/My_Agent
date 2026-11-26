@@ -1,0 +1,37 @@
+// Smoke test against the REAL FastAPI backend in demo mode (no mocks). Only creates test notes/tasks; risky actions are cancelled.
+const fs = require("fs"); const { launch, gotoView, collector } = require("./lib"); const R = collector(); const { check } = R;
+(async () => {
+  const b = await launch(); const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, permissions: ["microphone"] });
+  await ctx.addInitScript(() => localStorage.setItem("settings", JSON.stringify({ speak: false })));
+  const p = await ctx.newPage(); const errs = []; const reqs = []; p.on("pageerror", (e) => errs.push(String(e))); p.on("console", (m) => m.type() === "error" && !/503|favicon|Failed to load resource/.test(m.text()) && errs.push(m.text()));
+  p.on("request", (r) => r.url().includes("/api/") && reqs.push(r.method() + " " + new URL(r.url()).pathname));
+  const T = String(Date.now()).slice(-6); const base = "http://127.0.0.1:8000/"; await p.goto(base); await p.waitForTimeout(2200);
+  R.section("Real backend (demo mode)");
+  check("PC UI is served by the backend and needs no login on the PC", (await p.getByRole("navigation", { name: "Main" }).isVisible()) && (await p.getByLabel("Access PIN").count()) === 0);
+  check("status is 'PC connected' (mode detected from /api/ping)", await p.getByText("PC connected").first().isVisible());
+  check("model comes from the real /api/config", await p.getByText("Model: Demo mode (rule-based)").isVisible());
+  const cfg = await p.evaluate(() => fetch("/api/config").then((r) => r.json()));
+  check("/api/config exposes integration flags and no secret", typeof cfg.integrations.whatsapp_session === "boolean" && !JSON.stringify(cfg).match(/AIza|secret|paste_your_key/i), JSON.stringify(Object.keys(cfg.integrations)));
+  await gotoView(p, "notes"); await p.getByLabel("New note").fill(`UI smoke note ${T}`); await p.getByRole("button", { name: "Add" }).click(); await p.waitForTimeout(700);
+  check("a note is saved through the real POST /api/notes and listed", await p.getByText(`UI smoke note ${T}`).first().isVisible());
+  await gotoView(p, "tasks"); await p.getByLabel("New task").fill(`UI smoke task ${T}`); await p.getByRole("button", { name: "Add" }).click(); await p.waitForTimeout(600);
+  await p.getByRole("checkbox", { name: new RegExp("Mark complete: UI smoke task " + T) }).click(); await p.waitForTimeout(600);
+  check("a task is created and completed through the real endpoints", (await p.getByRole("button", { name: /Completed \(\d+\)/ }).isVisible()) && (await p.getByRole("checkbox", { name: new RegExp("Mark pending: UI smoke task " + T) }).count()) === 0);
+  await gotoView(p, "reminders"); await p.getByLabel("New reminder").fill(`UI smoke reminder ${T}`); await p.getByLabel("Minutes from now").fill("45"); await p.getByRole("button", { name: "Add" }).click(); await p.waitForTimeout(700);
+  check("a reminder appears under Upcoming", await p.getByText(`UI smoke reminder ${T}`, { exact: true }).isVisible());
+  await gotoView(p, "memory"); await p.waitForTimeout(600);
+  check("GET /api/memory works (counts include the new note)", await p.getByText("Saved memory").first().isVisible() && reqs.includes("GET /api/memory") && (await p.getByText("Notes", { exact: true }).first().isVisible()));
+  await gotoView(p, "integrations"); const t = await p.locator("main").innerText();
+  check("integration states reflect the real backend (demo = Disabled)", /Disabled — demo mode/.test(t) && /Desktop automation/.test(t));
+  await gotoView(p, "chat"); const ta = p.getByLabel("Message to the assistant"); await ta.fill("chrome band karo"); await ta.press("Enter"); await p.waitForTimeout(1200);
+  const dlg = p.getByRole("alertdialog");
+  check("the real backend's confirmation opens the dialog with a server-issued id", (await dlg.isVisible()) && (await dlg.innerText()).includes("close chrome"));
+  await dlg.getByRole("button", { name: "Cancel" }).click(); await p.waitForTimeout(900);
+  check("cancelling is accepted by the backend and nothing was executed", (await p.getByText(/cancel/i).count()) > 0 && (await p.getByLabel("Tools used").count()) === 0);
+  await ta.fill("what is the time"); await ta.press("Enter"); await p.waitForTimeout(1200);
+  check("a normal message round-trips through the real /api/chat", reqs.includes("POST /api/chat") && (await p.getByTestId("working").count()) === 0);
+  check("history is stored: the conversation appears in the sidebar list", (await p.getByRole("navigation", { name: "Main" }).getByText(/chrome band karo/).count()) > 0);
+  check("no page errors against the real backend", errs.length === 0, errs.join(" | "));
+  await b.close(); fs.writeFileSync("e2e/results/real-backend.json", JSON.stringify(R.rows, null, 2));
+  const f = R.rows.filter((r) => !r.pass); console.log(`${R.rows.length - f.length}/${R.rows.length} passed`); process.exit(f.length ? 1 : 0);
+})().catch((e) => { console.error("HARNESS ERROR", e); process.exit(2); });

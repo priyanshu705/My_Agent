@@ -152,3 +152,23 @@ def test_root_serves_ui_or_build_hint_with_security_headers(client):
 
 def test_legacy_static_ui_is_gone(client):
     assert client.get("/static/app.js").status_code in (404, 200) and "SESSION" not in client.get("/static/app.js").text
+
+
+# ---------- read-only UI support endpoints ----------
+def test_config_exposes_model_and_flags_but_no_secrets(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "super-secret-key-123")
+    monkeypatch.setenv("LLM_ROUTER_KEY", "router-secret-456")
+    body = client.get("/api/config").text
+    assert "super-secret-key-123" not in body and "router-secret-456" not in body
+    cfg = client.get("/api/config").json()
+    assert "model" in cfg and isinstance(cfg["integrations"]["whatsapp_session"], bool)
+    assert {"gemini_key", "browser_agent", "desktop_automation", "wake_engine_running"} <= set(cfg["integrations"])
+
+
+def test_memory_endpoint_is_read_only_and_reports_facts(client, tmp_path, monkeypatch):
+    from app import memory_tools
+    monkeypatch.setattr(memory_tools, "DATA_FILE", tmp_path / "memory.json")
+    memory_tools.remember_fact("Om likes basmati rice")
+    r = client.get("/api/memory").json()
+    assert r["facts"] == ["Om likes basmati rice"] and r["counts"]["facts"] == 1
+    assert client.post("/api/memory", json={"facts": ["x"]}).status_code in (404, 405)

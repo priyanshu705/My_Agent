@@ -2,7 +2,8 @@
 import { create } from "zustand";
 import { api, apiRaw, getToken, setToken, setAuthLostHandler, AuthError } from "./api";
 import { voice } from "./voice";
-import type { Activity, CalEvent, Confirm, Mail, Msg, Note, Reminder, Session, Settings, Todo, UiState } from "./types";
+import { IDLE_ACT, normalizeActivity } from "./activity";
+import type { Activity, CalEvent, Cfg, Confirm, Mail, Memory, Mode, Msg, Note, Reminder, Session, Settings, Theme, Todo, UiState, View, VoiceIssue } from "./types";
 
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
 const nowHM = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -11,7 +12,10 @@ const ls = {
   set(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-const ACCENTS = ["cyan", "violet", "emerald", "amber", "rose"];
+const DEFAULT_SETTINGS: Settings = { name: "", voice: "Sulafat", rate: 1, speak: true, convo: true, srLang: "en-IN", showTools: true, wake: false, wakeWord: "", theme: "light" };
+const THEMES: Theme[] = ["light", "dark", "system"];
+const SID_OK = /^[A-Za-z0-9_-]{1,64}$/;
+
 /** Keep only well-typed values from localStorage so a corrupted or old entry cannot break the UI. */
 function cleanSettings(raw: unknown): Settings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -19,32 +23,37 @@ function cleanSettings(raw: unknown): Settings {
   const str = (v: unknown, def: string, max = 40) => (typeof v === "string" && v.length <= max ? v : def);
   const bool = (v: unknown, def: boolean) => (typeof v === "boolean" ? v : def);
   const rate = typeof r.rate === "number" && r.rate >= 0.5 && r.rate <= 2 ? r.rate : d.rate;
-  const accent = typeof r.accent === "string" && ACCENTS.includes(r.accent) ? r.accent : d.accent;
+  const theme = THEMES.includes(r.theme as Theme) ? (r.theme as Theme) : d.theme;
   return { name: str(r.name, d.name), voice: str(r.voice, d.voice), rate, speak: bool(r.speak, d.speak), convo: bool(r.convo, d.convo),
-    srLang: str(r.srLang, d.srLang, 12), accent, showTools: bool(r.showTools, d.showTools),
-    wake: bool(r.wake, d.wake), wakeWord: str(r.wakeWord, d.wakeWord, 40).toLowerCase() };
+    srLang: str(r.srLang, d.srLang, 12), showTools: bool(r.showTools, d.showTools),
+    wake: bool(r.wake, d.wake), wakeWord: str(r.wakeWord, d.wakeWord, 40).toLowerCase(), theme };
 }
-const SID_OK = /^[A-Za-z0-9_-]{1,64}$/;
 
-const DEFAULT_SETTINGS: Settings = { name: "", voice: "Sulafat", rate: 1, speak: true, convo: true, srLang: "en-IN", accent: "cyan", showTools: true, wake: false, wakeWord: "" };
-const IDLE_ACT: Activity = { phase: "idle", steps: [], done: true };
+export function applyTheme(theme: Theme) {
+  if (typeof document === "undefined") return;
+  const t = theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
+  document.documentElement.dataset.theme = t;
+}
 
 type Toast = { id: string; text: string };
-type Dash = { todos: Todo[]; notes: Note[]; reminders: Reminder[]; calendar: CalEvent[]; mail: Mail[]; calendarConnected: boolean; mailConnected: boolean };
+type Dash = { todos: Todo[]; notes: Note[]; reminders: Reminder[]; calendar: CalEvent[]; mail: Mail[]; calendarConnected: boolean; mailConnected: boolean; whatsappSession: boolean | null; battery: { percent: number; plugged: boolean } | null };
 
 interface State {
   ready: boolean; authed: boolean; loggingIn: boolean; loginError: string;
-  cfg: { user_name?: string; wake_word?: string; wake_engine?: string; google_ready?: boolean; google_connected?: boolean; needs_setup?: string[] };
+  mode: Mode; online: boolean; checkedAt: number;
+  cfg: Cfg;
   settings: Settings; sessions: Session[]; sid: string; msgs: Msg[];
   ui: UiState; busy: boolean; activity: Activity; interim: string; voiceStatus: string;
+  voiceIssue: VoiceIssue; wakeActive: boolean; wakeNote: string;
   dash: Dash; pcOnline: boolean; toasts: Toast[]; convoActive: boolean;
-  settingsOpen: boolean; sidebarOpen: boolean; tab: "chat" | "flow" | "dash";
+  memory: Memory | null; memoryUnsupported: boolean; draft: string;
+  view: View; sidebarOpen: boolean;
   init(): Promise<void>; login(pin: string): Promise<void>; logout(): void;
-  send(text: string): Promise<void>; confirm(approved: boolean): Promise<void>;
-  newChat(): void; openSession(id: string): Promise<void>; deleteSession(id: string): Promise<void>;
-  refreshSessions(): Promise<void>; refreshDash(): Promise<void>;
+  send(text: string): Promise<void>; confirm(approved: boolean): Promise<void>; resetChat(): Promise<void>;
+  newChat(): void; openSession(id: string): Promise<void>; deleteSession(id: string): Promise<void>; deleteAllSessions(): Promise<void>;
+  refreshSessions(): Promise<void>; refreshDash(): Promise<void>; refreshStatus(): Promise<void>; loadMemory(): Promise<void>;
   addTodo(t: string): Promise<void>; toggleTodo(i: number): Promise<void>; addNote(t: string): Promise<void>; addReminder(t: string, minutes: number): Promise<void>;
-  toggleMic(): Promise<void>; setSettings(p: Partial<Settings>): void; toast(text: string): void;
+  toggleMic(): Promise<void>; setSettings(p: Partial<Settings>): void; toast(text: string): void; go(v: View): void; ask(text: string): void;
   syncWake(): void; set(p: Partial<State>): void; playSample(): Promise<void>; connectGoogle(): Promise<void>;
 }
 
@@ -56,6 +65,14 @@ let wakeTimer: ReturnType<typeof setInterval> | null = null;
 let wakeSeq: number | null = null;
 let gen = 0; // bumped on logout / session switch so late responses from the old state are ignored
 let emptyCount = 0;
+let mq: MediaQueryList | null = null;
+
+const MIC_MSG: Record<string, string> = {
+  "not-allowed": "Microphone access is blocked. Click the lock icon in the address bar, allow the microphone, then try again.",
+  "service-not-allowed": "Microphone access is blocked. Allow the microphone for this site and try again.",
+  "audio-capture": "No microphone was found. Connect one and try again.",
+  network: "Speech recognition needs an internet connection. Check your connection.",
+};
 
 export const useStore = create<State>((set, get) => {
   const speakReply = async (text: string) => {
@@ -75,30 +92,33 @@ export const useStore = create<State>((set, get) => {
     const g = gen;
     actTimer = setInterval(async () => {
       try {
-        const a = await api<Activity>("/api/activity?session_id=" + encodeURIComponent(sid), { timeout: 6000 });
-        if (g === gen && get().sid === sid && actTimer && (get().busy || !a.done)) set({ activity: a });
+        const raw = await api<unknown>("/api/activity?session_id=" + encodeURIComponent(sid), { timeout: 6000 });
+        if (!(g === gen && get().sid === sid && actTimer)) return;
+        const a = normalizeActivity(raw);
+        // an idle answer from the PC backend must not wipe the steps we already know about while a request is running
+        if (get().busy && a.steps.length === 0) return;
+        if (get().busy || !a.done) set({ activity: a });
       } catch { /* transient */ }
     }, 600);
   };
   const stopActivity = () => { if (actTimer) clearInterval(actTimer); actTimer = null; };
 
+  /** Starts one voice capture. "listening" is only shown once the recognizer has really started. */
   const listenOnce = async () => {
     const st = get();
-    if (!voice.canListen) { st.toast("Voice input is not supported in this browser. Use Chrome or Edge."); set({ convoActive: false }); return; }
-    set({ ui: "listening", interim: "" });
+    if (!voice.canListen) { st.toast("Voice input is not supported in this browser. Use Chrome or Edge on a secure connection."); set({ convoActive: false, voiceIssue: "unavailable" }); return; }
     const ok = await voice.listen({
       lang: st.settings.srLang,
       onInterim: (t) => set({ interim: t }),
       onEnd: (text, err) => {
         set({ interim: "" });
         if (err) {
-          const msg: Record<string, string> = {
-            "not-allowed": "Microphone access is blocked. Click the lock icon in the address bar, allow the microphone, then try again.",
-            "service-not-allowed": "Microphone access is blocked. Allow the microphone for this site and try again.",
-            "audio-capture": "No microphone was found. Connect one and try again.",
-            network: "Speech recognition needs an internet connection. Check your connection.",
-          };
-          if (msg[err]) { get().toast(msg[err]); set({ convoActive: false, ui: "idle" }); return; }
+          if (MIC_MSG[err]) {
+            get().toast(MIC_MSG[err]);
+            set({ convoActive: false, ui: "idle", voiceIssue: err === "audio-capture" ? "unavailable" : err === "network" ? "error" : "denied" });
+            return;
+          }
+          set({ voiceIssue: "error" });
         }
         if (text) { emptyCount = 0; set({ ui: "thinking" }); void get().send(text); return; }
         emptyCount++;
@@ -107,11 +127,15 @@ export const useStore = create<State>((set, get) => {
         if (emptyCount > 0) get().toast("I did not hear anything. Tap the microphone and try again.");
       },
     });
-    if (!ok) set({ convoActive: false, ui: "idle" });
+    if (ok) set({ ui: "listening", interim: "", voiceIssue: null });
+    else set({ convoActive: false, ui: "idle", voiceIssue: "unavailable" });
   };
 
   // ---- wake word: offline engine (poll /api/wake) or browser recognizer; only active while idle ----
-  const stopWakeLoops = () => { voice.stopWake(); if (wakeTimer) clearInterval(wakeTimer); wakeTimer = null; wakeSeq = null; };
+  const stopWakeLoops = () => {
+    voice.stopWake(); if (wakeTimer) clearInterval(wakeTimer); wakeTimer = null; wakeSeq = null;
+    if (get().wakeActive) set({ wakeActive: false });
+  };
   const onWake = (after: string) => {
     stopWakeLoops();
     if (get().busy || get().ui !== "idle") return;
@@ -127,15 +151,21 @@ export const useStore = create<State>((set, get) => {
       if (wakeTimer) return; voice.stopWake();
       wakeTimer = setInterval(async () => {
         try {
-          const w = await api<{ seq: number; error?: string }>("/api/wake", { timeout: 4000 });
+          const w = await api<{ seq: number; running?: boolean; error?: string }>("/api/wake", { timeout: 4000 });
           if (!wakeTimer) return; // stopped while the request was in flight
+          // only claim "active" when the offline engine says it is really running
+          set({ wakeActive: w.running !== false && !w.error, wakeNote: w.error || "" });
           if (wakeSeq === null) { wakeSeq = w.seq; return; }
           if (w.seq !== wakeSeq) { wakeSeq = w.seq; onWake(""); }
         } catch { /* transient */ }
       }, 600);
-    } else if (!voice.waking) {
-      voice.startWake({ lang: st.settings.srLang, word: st.settings.wakeWord || st.cfg.wake_word || "hey agent", onHit: onWake });
-    }
+    } else if (!voice.waking && !voice.wakeBlocked) {
+      const started = voice.startWake({
+        lang: st.settings.srLang, word: st.settings.wakeWord || st.cfg.wake_word || "hey agent", onHit: onWake,
+        onError: (e) => { set({ wakeActive: false, wakeNote: MIC_MSG[e] || "The wake word could not use the microphone.", voiceIssue: e === "audio-capture" ? "unavailable" : "denied" }); get().toast(MIC_MSG[e] || "The wake word could not start."); },
+      });
+      set({ wakeActive: started, wakeNote: started ? "" : "The wake word could not start in this browser." });
+    } else if (voice.wakeBlocked && get().wakeActive) set({ wakeActive: false });
   };
 
   const stopJob = () => { if (jobTimer) clearInterval(jobTimer); jobTimer = null; };
@@ -145,7 +175,7 @@ export const useStore = create<State>((set, get) => {
   };
   const startTimers = () => {
     stopTimers(); // single place that creates the background timers, so login/reload can never stack them
-    dashTimer = setInterval(() => { if (get().authed) void get().refreshDash(); }, 20000);
+    dashTimer = setInterval(() => { if (get().authed) { void get().refreshDash(); void get().refreshStatus(); } }, 20000);
     remindTimer = setInterval(async () => {
       if (!get().authed) return;
       try {
@@ -184,7 +214,7 @@ export const useStore = create<State>((set, get) => {
     stopActivity();
     const confirm: Confirm | null = data.confirm ?? null;
     set((s) => ({
-      msgs: [...s.msgs, { id: uid(), role: "bot", text: data.reply, at: nowHM(), actions: data.actions || [], confirm, pendingJob: data.pending ? data.job_id : null }],
+      msgs: [...s.msgs, { id: uid(), role: "bot", text: data.reply, at: nowHM(), actions: data.actions || [], confirm, pendingJob: data.pending ? data.job_id : null, error: !!data.error }],
       activity: { phase: "done", steps: data.trace || s.activity.steps, done: true },
       busy: !!data.pending, ui: data.pending ? "thinking" : "idle",
     }));
@@ -194,10 +224,11 @@ export const useStore = create<State>((set, get) => {
   };
 
   return {
-    ready: false, authed: false, loggingIn: false, loginError: "", cfg: {},
+    ready: false, authed: false, loggingIn: false, loginError: "", mode: "local", online: true, checkedAt: 0, cfg: {},
     settings: DEFAULT_SETTINGS, sessions: [], sid: "", msgs: [], ui: "idle", busy: false, activity: IDLE_ACT, interim: "", voiceStatus: "",
-    dash: { todos: [], notes: [], reminders: [], calendar: [], mail: [], calendarConnected: false, mailConnected: false },
-    pcOnline: false, toasts: [], convoActive: false, settingsOpen: false, sidebarOpen: false, tab: "chat",
+    voiceIssue: null, wakeActive: false, wakeNote: "",
+    dash: { todos: [], notes: [], reminders: [], calendar: [], mail: [], calendarConnected: false, mailConnected: false, whatsappSession: null, battery: null },
+    pcOnline: false, toasts: [], convoActive: false, memory: null, memoryUnsupported: false, draft: "", view: "overview", sidebarOpen: false,
     set: (p) => set(p as any),
     syncWake,
 
@@ -205,21 +236,34 @@ export const useStore = create<State>((set, get) => {
       const id = uid(); set((s) => ({ toasts: [...s.toasts, { id, text }].slice(-4) }));
       setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 5500);
     },
+    go: (v) => set({ view: v, sidebarOpen: false }),
+    /** Quick actions send an ordinary chat message: they go through the same agent and the same confirmations as typing it. */
+    ask: (text) => { set({ view: "chat", sidebarOpen: false }); void get().send(text); },
 
     setSettings: (p) => {
-      const s = { ...get().settings, ...p }; ls.set("settings", s); set({ settings: s });
-      if (typeof document !== "undefined") document.documentElement.dataset.accent = s.accent;
+      const s = cleanSettings({ ...get().settings, ...p }); ls.set("settings", s); set({ settings: s });
+      if (p.theme !== undefined) applyTheme(s.theme);
       if (p.voice !== undefined) voice.resetFailure();
-      if (p.wake !== undefined || p.wakeWord !== undefined || p.srLang !== undefined) { voice.stopWake(); get().syncWake(); }
+      if (p.wake !== undefined || p.wakeWord !== undefined || p.srLang !== undefined) { voice.clearWakeBlock(); voice.stopWake(); set({ wakeNote: "" }); get().syncWake(); }
+    },
+
+    refreshStatus: async () => {
+      let mode: Mode = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) ? "local" : "cloud";
+      try { const p = await api<{ ok?: boolean; cloud?: boolean }>("/api/ping", { timeout: 8000 }); mode = p.cloud ? "cloud" : "local"; set({ online: true }); }
+      catch (e) { if (!(e instanceof AuthError)) set({ online: false }); }
+      try { const cfg = await api<Cfg>("/api/config", { timeout: 15000 }); set({ cfg }); } catch {}
+      set({ mode, checkedAt: Date.now() });
+      if (mode === "local") set({ pcOnline: get().online }); // on the PC backend the agent IS the PC
     },
 
     init: async () => {
       const settings = cleanSettings(ls.get<unknown>("settings", {}));
-      document.documentElement.dataset.accent = settings.accent;
+      applyTheme(settings.theme);
+      if (typeof matchMedia !== "undefined" && !mq) { mq = matchMedia("(prefers-color-scheme: dark)"); mq.addEventListener("change", () => { if (get().settings.theme === "system") applyTheme("system"); }); }
       let sid = ls.get<string>("sid", ""); if (typeof sid !== "string" || !SID_OK.test(sid)) { sid = uid(); ls.set("sid", sid); }
       setAuthLostHandler(() => { gen++; stopJob(); stopTimers(); stopWakeLoops(); voice.stop(); voice.stopListening(); setToken(""); set({ authed: false, loginError: "Your session expired. Please sign in again.", busy: false, ui: "idle" }); stopActivity(); });
       set({ settings, sid });
-      try { const cfg = await api("/api/config", { timeout: 15000 }); set({ cfg }); } catch {}
+      await get().refreshStatus();
       if (getToken()) {
         try { await api("/api/sessions", { timeout: 15000 }); set({ authed: true }); } catch (e) { if (!(e instanceof AuthError)) set({ authed: true }); }
       } else {
@@ -229,7 +273,7 @@ export const useStore = create<State>((set, get) => {
       set({ ready: true });
       if (get().authed) {
         await get().openSession(sid);
-        void get().refreshDash();
+        void get().refreshDash(); void get().refreshStatus();
         startTimers();
         if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission();
       }
@@ -241,20 +285,28 @@ export const useStore = create<State>((set, get) => {
         const d = await api<{ token: string }>("/api/login", { method: "POST", json: { pin }, timeout: 20000 });
         setToken(d.token); set({ authed: true, loggingIn: false });
         voice.unlock();
-        await get().openSession(get().sid); void get().refreshDash();
+        await get().openSession(get().sid); void get().refreshDash(); void get().refreshStatus();
         startTimers();
       } catch (e: any) { set({ loggingIn: false, loginError: e?.message || "Sign-in failed." }); }
     },
-    logout: () => { gen++; setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); stopWakeLoops(); set({ authed: false, msgs: [], convoActive: false, ui: "idle" }); },
+    logout: () => { gen++; setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); stopWakeLoops(); set({ authed: false, msgs: [], convoActive: false, ui: "idle", view: "overview" }); },
 
     refreshSessions: async () => { try { const r = await api<{ sessions: Session[] }>("/api/sessions"); set({ sessions: r.sessions }); } catch {} },
     refreshDash: async () => {
+      // note: only trust the WhatsApp flag in local mode; the cloud backend always reports false because WhatsApp lives on the PC
       try {
         const d = await api<any>("/api/dashboard/local");
-        set((s) => ({ dash: { ...s.dash, todos: d.todos ?? [], notes: d.notes ?? [], reminders: d.reminders ?? [] }, pcOnline: !!d.status?.pc }));
+        set((s) => ({
+          dash: { ...s.dash, todos: d.todos ?? [], notes: d.notes ?? [], reminders: d.reminders ?? [], whatsappSession: s.mode === "local" && typeof d.status?.whatsapp === "boolean" ? d.status.whatsapp : null, battery: d.status?.battery ?? null },
+          ...(s.mode === "cloud" ? { pcOnline: !!d.status?.pc } : {}),
+        }));
       } catch {}
       try { const c = await api<any>("/api/dashboard/calendar"); set((s) => ({ dash: { ...s.dash, calendar: c.events || [], calendarConnected: !!c.connected } })); } catch {}
       try { const m = await api<any>("/api/dashboard/mail"); set((s) => ({ dash: { ...s.dash, mail: m.mails || [], mailConnected: !!m.connected } })); } catch {}
+    },
+    loadMemory: async () => {
+      try { const m = await api<Memory>("/api/memory", { timeout: 10000 }); set({ memory: m, memoryUnsupported: false }); }
+      catch (e) { if (!(e instanceof AuthError)) set({ memory: null, memoryUnsupported: true }); }
     },
 
     openSession: async (id) => {
@@ -267,17 +319,26 @@ export const useStore = create<State>((set, get) => {
       } catch { set({ msgs: [] }); }
       await get().refreshSessions();
     },
-    newChat: () => { const id = uid(); void get().openSession(id); set({ msgs: [] }); },
+    newChat: () => { const id = uid(); void get().openSession(id); set({ msgs: [], view: "chat" }); },
     deleteSession: async (id) => {
       try { await api("/api/sessions/" + encodeURIComponent(id), { method: "DELETE" }); } catch {}
       if (id === get().sid) get().newChat(); else await get().refreshSessions();
+    },
+    deleteAllSessions: async () => {
+      for (const s of get().sessions) { try { await api("/api/sessions/" + encodeURIComponent(s.id), { method: "DELETE" }); } catch {} }
+      get().newChat(); await get().refreshSessions(); get().toast("All conversations deleted.");
+    },
+    resetChat: async () => {
+      const sid = get().sid;
+      try { await api("/api/reset", { method: "POST", json: { session_id: sid } }); set({ msgs: [], activity: IDLE_ACT }); get().toast("Conversation reset."); }
+      catch (e: any) { get().toast(e?.message || "Could not reset the conversation."); }
     },
 
     send: async (text) => {
       const t = text.trim(); if (!t || get().busy) return;
       voice.stop(); voice.unlock();
       const sid = get().sid;
-      set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "user", text: t, at: nowHM() }], busy: true, ui: "thinking", activity: { phase: "understand", steps: [{ phase: "understand", label: "Understanding your request", ms: 0 }], done: false } }));
+      set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "user", text: t, at: nowHM() }], busy: true, ui: "thinking", draft: "", activity: { phase: "understand", steps: [{ phase: "understand", label: "Understanding your request", ms: 0 }], done: false } }));
       startActivity(sid);
       try {
         const data = await api<any>("/api/chat", { method: "POST", json: { text: t, session_id: sid }, timeout: 70000 });
@@ -285,7 +346,7 @@ export const useStore = create<State>((set, get) => {
       } catch (e: any) {
         stopActivity();
         if (e instanceof AuthError) return;
-        set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.name === "AbortError" ? "the request took too long." : e?.message || e), at: nowHM() }], busy: false, ui: "idle", activity: { ...s.activity, done: true, phase: "error" } }));
+        set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.name === "AbortError" ? "the request took too long." : e?.message || e), at: nowHM(), error: true }], busy: false, ui: "idle", activity: { ...s.activity, done: true, phase: "error" } }));
       }
     },
 
@@ -297,12 +358,12 @@ export const useStore = create<State>((set, get) => {
       voice.stop(); startActivity(sid);
       set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "user", text: approved ? "Yes, go ahead." : "No, cancel it.", at: nowHM() }] }));
       try { handle(sid, await api<any>("/api/confirm", { method: "POST", json: { approved, confirm_id: confirmId, session_id: sid }, timeout: 70000 })); }
-      catch (e: any) { stopActivity(); if (e instanceof AuthError) return; set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.message || e), at: nowHM() }], busy: false, ui: "idle" })); }
+      catch (e: any) { stopActivity(); if (e instanceof AuthError) return; set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.message || e), at: nowHM(), error: true }], busy: false, ui: "idle" })); }
     },
 
     addTodo: async (t) => { await api("/api/todos", { method: "POST", json: { text: t } }); await get().refreshDash(); },
     toggleTodo: async (i) => { await api(`/api/todos/${i}/toggle`, { method: "POST" }); await get().refreshDash(); },
-    addNote: async (t) => { await api("/api/notes", { method: "POST", json: { text: t } }); await get().refreshDash(); },
+    addNote: async (t) => { await api("/api/notes", { method: "POST", json: { text: t } }); await get().refreshDash(); void get().loadMemory(); },
     addReminder: async (t, minutes) => { const r = await api<{ message: string }>("/api/reminders", { method: "POST", json: { text: t, minutes } }); get().toast(r.message); await get().refreshDash(); },
 
     toggleMic: async () => {

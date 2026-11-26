@@ -117,7 +117,7 @@ app/
   whatsapp_tools.py WhatsApp Web: send, files, read, schedule (Phase 3)
   contacts_tools.py Saved contacts + Google Contacts lookup
   demo_agent.py    Offline demo brain (no API key)
-web/               Web UI (Next.js: voice in/out, wake word). run.bat builds it once into web/out and the agent serves it
+web/               Web UI (Next.js: overview, chat, voice, automation, notes/tasks/reminders/memory, integrations, settings; light/dark). run.bat builds it once into web/out and the agent serves it
 run.bat            One-click start on Windows
 setup_google.bat   One-time Google login for Gmail + Calendar
 setup_whatsapp.bat One-time WhatsApp QR login
@@ -153,3 +153,9 @@ Install once: `pip install -r requirements-extra.txt`, then switch on what you w
 | `WAKEWORD_ENGINE=openwakeword` | Offline wake word instead of Chrome cloud speech | mic audio stays on the PC; pretrained phrase is English ("hey jarvis") and similar sounds can trigger it. For "hey agent", train your own model and set `OWW_MODEL` |
 
 Not added on purpose: playwright-mcp. The agent already has its own Playwright tools and browser-use, so a third browser controller would only add overlap and more tools for the model to confuse. Tests are in `tests/` (see `tests/README.md`).
+
+## UI documentation
+* `DESIGN_SYSTEM.md` — tokens, contrast, components, voice-orb states
+* `FRONTEND_IMPLEMENTATION.md` — architecture, which screens work on the local vs cloud backend, how to run the UI tests
+* `UI_UX_AUDIT.md` — what was wrong before the redesign
+* `RESPONSIVE_TEST_REPORT.md`, `ACCESSIBILITY_REPORT.md`, `INTERACTION_TEST_REPORT.md` — generated test results (and what is *not* covered)
