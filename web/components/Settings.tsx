@@ -2,7 +2,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Play } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { CLOUD_VOICES } from "@/lib/voice";
+import { CLOUD_VOICES, voice } from "@/lib/voice";
 
 const Row = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="flex items-center justify-between gap-4 py-2.5 text-sm"><span className="text-slate-300">{label}</span>{children}</label>;
 const Toggle = ({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) => (
@@ -28,6 +28,10 @@ export default function Settings() {
               <Row label={`Speed · ${settings.rate.toFixed(2)}×`}><input type="range" min={0.8} max={1.3} step={0.05} value={settings.rate} onChange={(e) => setSettings({ rate: +e.target.value })} className="w-40 accent-[rgb(var(--accent))]" /></Row>
               <Row label="Speak replies"><Toggle on={settings.speak} onChange={(v) => setSettings({ speak: v })} label="Speak replies" /></Row>
               <Row label="Hands-free conversation"><Toggle on={settings.convo} onChange={(v) => setSettings({ convo: v })} label="Hands-free conversation" /></Row>
+              <Row label={`Wake word · "${settings.wakeWord || cfg.wake_word || "hey agent"}"`}>
+                {voice.canListen ? <Toggle on={settings.wake} onChange={(v) => setSettings({ wake: v })} label="Listen for the wake word" /> : <span className="text-xs text-slate-500">Needs Chrome or Edge</span>}
+              </Row>
+              {settings.wake && <Row label="Custom wake phrase"><input value={settings.wakeWord} onChange={(e) => setSettings({ wakeWord: e.target.value.slice(0, 40) })} placeholder={cfg.wake_word || "hey agent"} className="w-40 rounded-lg hairline bg-black/25 px-3 py-1.5 text-right outline-none focus:border-accent/50" /></Row>}
               <Row label="Show tool chips"><Toggle on={settings.showTools} onChange={(v) => setSettings({ showTools: v })} label="Show tool chips" /></Row>
               <Row label="Mic language">
                 <select value={settings.srLang} onChange={(e) => setSettings({ srLang: e.target.value })} className="rounded-lg hairline bg-ink-800 px-2 py-1.5 text-xs outline-none">

@@ -10,5 +10,5 @@ export type Note = { text: string; at: string };
 export type Reminder = { text: string; due: string };
 export type CalEvent = { title: string; day: string; time: string; location?: string };
 export type Mail = { from: string; subject: string; snippet: string };
-export type Settings = { name: string; voice: string; rate: number; speak: boolean; convo: boolean; srLang: string; accent: string; showTools: boolean };
+export type Settings = { name: string; voice: string; rate: number; speak: boolean; convo: boolean; srLang: string; accent: string; showTools: boolean; wake: boolean; wakeWord: string };
 export type UiState = "idle" | "listening" | "thinking" | "speaking";

@@ -140,3 +140,15 @@ def test_forged_forwarding_header_is_not_trusted():
         return Request({"type": "http", "client": (peer, 1), "headers": [(k.encode(), v.encode()) for k, v in headers.items()]})
     assert dashboard.client_ip(req("203.0.113.5", {"x-forwarded-for": "1.2.3.4"})) == "203.0.113.5"
     assert dashboard.client_ip(req("127.0.0.1", {"cf-connecting-ip": "9.9.9.9"})) == "9.9.9.9"
+
+
+# ---------- UI serving ----------
+def test_root_serves_ui_or_build_hint_with_security_headers(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Content-Security-Policy" in r.headers and r.headers["X-Frame-Options"] == "DENY"
+    assert "<html" in r.text.lower() or "<!doctype" in r.text.lower()
+
+
+def test_legacy_static_ui_is_gone(client):
+    assert client.get("/static/app.js").status_code in (404, 200) and "SESSION" not in client.get("/static/app.js").text

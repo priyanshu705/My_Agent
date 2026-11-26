@@ -20,6 +20,7 @@ echo.
 echo Phone par ye address kholo ^(PC aur phone same Wi-Fi par hon^): UI ke Settings mein bhi dikhega.
 echo Windows firewall puchhe to "Private networks" allow karo.
 echo.
+call build_ui.bat
 start "" http://localhost:8000
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 pause
