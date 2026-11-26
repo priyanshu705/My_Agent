@@ -1,5 +1,7 @@
 """Web actions: Google search, YouTube, open websites, time, WhatsApp Web."""
 
+import ipaddress
+import re
 import urllib.parse
 import webbrowser
 from datetime import datetime
@@ -14,6 +16,24 @@ SITES = {
 }
 
 
+def is_public_url(url: str) -> bool:
+    """True only for http(s) URLs whose host is not localhost, a private/link-local IP or an internal name."""
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    host = (u.hostname or "").lower()
+    if u.scheme not in ("http", "https") or not host or u.username or u.password:
+        return False
+    if host == "localhost" or host.endswith((".local", ".internal", ".localhost")) or "." not in host and ":" not in host:
+        return False
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        # odd numeric forms (0x7f.1, 017.0.0.1) are resolved as IPs by browsers: refuse them
+        return not re.fullmatch(r"[0-9a-fx.]+", host)
+
+
 def open_website(site: str) -> str:
     """Open a website in the PC browser. Accepts a known name ('youtube', 'gmail') or a URL.
 
@@ -21,7 +41,9 @@ def open_website(site: str) -> str:
         site: Site name or full URL.
     """
     key = site.lower().strip()
-    url = SITES.get(key) or (site if site.startswith("http") else f"https://{site}")
+    url = SITES.get(key) or (site.strip() if site.strip().lower().startswith(("http://", "https://")) else f"https://{site.strip()}")
+    if not is_public_url(url):
+        return "That address is not a public website, so I did not open it."
     webbrowser.open(url)
     return f"Opened {url}."
 

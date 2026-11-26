@@ -6,6 +6,7 @@ Nothing here is an AI tool. It only feeds the web UI in static/.
 import hmac
 import json
 import os
+import re
 import secrets
 import socket
 import threading
@@ -18,6 +19,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from . import memory_tools as mem
+
+from .util import atomic_write
 
 ROOT = Path(__file__).resolve().parent.parent
 HISTORY_FILE = ROOT / "data" / "chat_history.json"
@@ -41,7 +44,7 @@ def _load() -> dict:
 
 def _save(db: dict) -> None:
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    HISTORY_FILE.write_text(json.dumps(db, ensure_ascii=False), encoding="utf-8")
+    atomic_write(HISTORY_FILE, json.dumps(db, ensure_ascii=False))
 
 
 def _now() -> str:
@@ -81,14 +84,22 @@ def sessions():
     return {"sessions": rows}
 
 
+def _check_sid(sid: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", sid):
+        raise HTTPException(400, "Invalid session id")
+    return sid
+
+
 @router.get("/api/sessions/{sid}")
 def session_messages(sid: str):
+    _check_sid(sid)
     s = _load()["sessions"].get(sid)
     return {"id": sid, "messages": s["messages"] if s else []}
 
 
 @router.delete("/api/sessions/{sid}")
 def delete_session(sid: str):
+    _check_sid(sid)
     with _lock:
         db = _load()
         db["sessions"].pop(sid, None)
@@ -323,7 +334,7 @@ def _load_tokens() -> dict[str, float]:
 def _save_tokens() -> None:
     try:
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        TOKEN_FILE.write_text(json.dumps(_tokens or {}), encoding="utf-8")
+        atomic_write(TOKEN_FILE, json.dumps(_tokens or {}))
     except OSError:
         pass
 
@@ -339,9 +350,14 @@ def _valid_token(tok: str) -> bool:
 
 
 def client_ip(request: Request) -> str:
+    """Real client address. Forwarding headers are trusted only when the connection comes from this PC
+    (the tunnel program), otherwise anyone could send a fake header to dodge the login lockout and rate limits."""
+    peer = request.client.host if request.client else "?"
+    if peer not in LOCAL_HOSTS:
+        return peer
     h = request.headers
-    return (h.get("cf-connecting-ip") or (h.get("x-forwarded-for") or "").split(",")[0].strip()
-            or (request.client.host if request.client else "?"))
+    xff = [x.strip() for x in (h.get("x-forwarded-for") or "").split(",") if x.strip()]
+    return h.get("cf-connecting-ip") or (xff[-1] if xff else "") or peer
 
 
 def is_local(request: Request) -> bool:

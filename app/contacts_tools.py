@@ -4,6 +4,7 @@ import json
 import re
 import threading
 from pathlib import Path
+from .util import atomic_write
 
 CONTACTS_FILE = Path(__file__).resolve().parent.parent / "data" / "contacts.json"
 _lock = threading.Lock()
@@ -28,7 +29,7 @@ def _load() -> dict:
 
 def _save(data: dict):
     CONTACTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONTACTS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write(CONTACTS_FILE, json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def _google_search(name: str) -> list[dict]:

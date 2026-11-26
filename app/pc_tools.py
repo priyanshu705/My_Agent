@@ -42,6 +42,41 @@ PROCESS_ALIASES = {
 SEARCH_ROOTS = [HOME / "Desktop", HOME / "Documents", HOME / "Downloads",
                 HOME / "Pictures", HOME / "Videos", HOME / "Music", HOME / "OneDrive"]
 
+# Never terminate these, even if the model asks.
+PROTECTED_PROCESSES = {"system", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe",
+                       "smss.exe", "explorer.exe", "svchost.exe", "dwm.exe", "python.exe", "pythonw.exe"}
+MAX_TYPE_CHARS = 2000
+ALLOWED_KEYS = {"ctrl", "shift", "alt", "win", "enter", "esc", "tab", "space", "backspace", "delete", "up", "down",
+                "left", "right", "home", "end", "pageup", "pagedown", "volumemute", "volumeup", "volumedown",
+                *[f"f{i}" for i in range(1, 13)], *"abcdefghijklmnopqrstuvwxyz0123456789"}
+
+
+def allowed_roots() -> list[Path]:
+    """Folders the agent may list, search or open. Extra roots: FILE_ROOTS=path1;path2 in .env."""
+    roots = [r for r in SEARCH_ROOTS]
+    for extra in os.getenv("FILE_ROOTS", "").split(os.pathsep if os.pathsep != ":" else ";"):
+        if extra.strip():
+            roots.append(Path(extra.strip()).expanduser())
+    out = []
+    for r in roots:
+        try:
+            out.append(r.resolve())
+        except OSError:
+            pass
+    return out
+
+
+def safe_path(path: str | Path) -> Path | None:
+    """Resolve symlinks and return the path only if it lies inside an allowed root, else None."""
+    try:
+        p = Path(str(path)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    for root in allowed_roots():
+        if p == root or root in p.parents:
+            return p
+    return None
+
 
 def _start_menu_shortcuts():
     dirs = [Path(os.environ.get("ProgramData", "C:/ProgramData")) / "Microsoft/Windows/Start Menu/Programs",
@@ -61,19 +96,21 @@ def open_app(app_name: str) -> str:
     """
     if not IS_WINDOWS:
         return f"(Demo) '{app_name}' would open on Windows. This PC is not running Windows."
-    name = app_name.lower().strip()
+    name = app_name.lower().strip()[:80]
     target = APP_ALIASES.get(name)
     try:
         if target:
-            os.startfile(target) if target.endswith(":") else subprocess.Popen(f'start "" {target}', shell=True)
+            if target.endswith(":"):
+                os.startfile(target)
+            else:  # fixed allow-listed command, argument list, no shell
+                subprocess.Popen(["cmd", "/c", "start", "", target])
             return f"Opened {app_name}."
-        # Fallback: search Start Menu shortcuts
+        # Only apps with a Start Menu shortcut can be opened by free-form name
         for lnk in _start_menu_shortcuts():
-            if name in lnk.stem.lower():
+            if name and name in lnk.stem.lower():
                 os.startfile(str(lnk))
                 return f"Opened {lnk.stem}."
-        subprocess.Popen(f'start "" "{app_name}"', shell=True)
-        return f"{app_name} kholne ki koshish ki."
+        return f"I do not know an app called '{app_name}'."
     except Exception as e:
         return f"Could not open {app_name}: {e}"
 
@@ -87,9 +124,11 @@ def close_app(app_name: str) -> str:
     name = app_name.lower().strip()
     proc_name = PROCESS_ALIASES.get(name, name if name.endswith(".exe") else name + ".exe").lower()
     closed = 0
+    if proc_name in PROTECTED_PROCESSES:
+        return f"{app_name} is a protected system process, so I will not close it."
     for p in psutil.process_iter(["name"]):
         pname = (p.info.get("name") or "").lower()
-        if pname == proc_name or (name in pname and len(name) > 3):
+        if pname == proc_name and pname not in PROTECTED_PROCESSES:
             try:
                 p.terminate()
                 closed += 1
@@ -114,14 +153,16 @@ def search_files(query: str, max_results: int = 10) -> str:
         query: Part of the file or folder name to look for.
         max_results: Max matches to return.
     """
-    q = query.lower().strip()
+    q = query.lower().strip()[:100]
+    max_results = max(1, min(int(max_results), 30))
     found = []
     start = time.time()
     for root in SEARCH_ROOTS:
         if not root.exists():
             continue
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git")]
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git")
+                           and not os.path.islink(os.path.join(dirpath, d))]
             for f in filenames + dirnames:
                 if q in f.lower():
                     found.append(os.path.join(dirpath, f))
@@ -140,7 +181,9 @@ def open_file(path: str) -> str:
     Args:
         path: Full path of the file or folder.
     """
-    p = Path(path).expanduser()
+    p = safe_path(path)
+    if p is None:
+        return "That path is outside the folders I am allowed to use (Desktop, Documents, Downloads, Pictures, Videos, Music, OneDrive)."
     if not p.exists():
         return f"This path does not exist: {path}"
     if not IS_WINDOWS:
@@ -158,8 +201,11 @@ def list_folder(folder: str = "Downloads") -> str:
     p = Path(folder).expanduser()
     if not p.is_absolute():
         p = HOME / folder
-    if not p.exists():
-        return f"Folder not found: {p}"
+    p = safe_path(p)
+    if p is None:
+        return "That folder is outside the folders I am allowed to use."
+    if not p.is_dir():
+        return f"Folder not found: {folder}"
     items = sorted(p.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:40]
     return f"{p} mein (latest pehle):\n" + "\n".join(("[DIR] " if i.is_dir() else "") + i.name for i in items)
 
@@ -206,7 +252,7 @@ def take_screenshot() -> str:
     try:
         from PIL import ImageGrab
         SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-        path = SCREENSHOT_DIR / f"screenshot_{datetime.now():%Y%m%d_%H%M%S}.png"
+        path = SCREENSHOT_DIR / f"screenshot_{datetime.now():%Y%m%d_%H%M%S_%f}.png"
         ImageGrab.grab().save(path)
         return f"Screenshot saved: {path}"
     except (Exception, SystemExit) as e:
@@ -228,7 +274,7 @@ def system_status() -> str:
     b = psutil.sensors_battery() if hasattr(psutil, "sensors_battery") else None
     if b:
         parts.append(f"Battery {b.percent:.0f}% ({'charging' if b.power_plugged else 'not charging'})")
-    parts.append(f"CPU {psutil.cpu_percent(interval=0.5):.0f}%")
+    parts.append(f"CPU {psutil.cpu_percent(interval=None):.0f}%")
     parts.append(f"RAM {psutil.virtual_memory().percent:.0f}% used")
     return ", ".join(parts)
 
@@ -241,6 +287,8 @@ def type_text(text: str) -> str:
     Args:
         text: The text to type. Hindi/emoji supported via clipboard paste.
     """
+    if len(text) > MAX_TYPE_CHARS:
+        return f"That text is too long to type ({len(text)} characters, max {MAX_TYPE_CHARS})."
     try:
         import pyautogui
         import pyperclip
@@ -258,9 +306,11 @@ def press_keys(keys: str) -> str:
     Args:
         keys: Keys joined with '+', e.g. 'ctrl+shift+esc'.
     """
+    combo = [k.strip().lower().replace("windows", "win") for k in keys.split("+")]
+    if not combo or len(combo) > 4 or any(k not in ALLOWED_KEYS for k in combo):
+        return "Those keys are not allowed."
     try:
         import pyautogui
-        combo = [k.strip().lower().replace("windows", "win") for k in keys.split("+")]
         time.sleep(1)
         pyautogui.hotkey(*combo)
         return f"Pressed {keys}."

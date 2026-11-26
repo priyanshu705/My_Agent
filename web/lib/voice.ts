@@ -22,6 +22,9 @@ class VoiceEngine {
   private src: AudioBufferSourceNode | null = null;
   private token = 0;
   private cache = new Map<string, AudioBuffer>();
+  private cacheBytes = 0;
+  private listenTok = 0;
+  private micSource: MediaStreamAudioSourceNode | null = null;
   private downUntil = 0;
   lastStatus = "";
   // recognition
@@ -80,8 +83,15 @@ class VoiceEngine {
     const r = await apiRaw("/api/tts", { method: "POST", json: { text, voice }, timeout: 22000 });
     if (!r.ok) { let d: any = {}; try { d = await r.json(); } catch {} throw new Error(d.detail || "HTTP " + r.status); }
     const buf = await this.ensureCtx().decodeAudioData(await r.arrayBuffer());
-    if (this.cache.size > 40) this.cache.delete(this.cache.keys().next().value as string);
+    // bound the cache by memory (decoded float32 samples), not just by entry count
+    const bytes = (b: AudioBuffer) => b.length * b.numberOfChannels * 4;
+    this.cacheBytes += bytes(buf);
     this.cache.set(key, buf);
+    while ((this.cache.size > 40 || this.cacheBytes > 24 * 1024 * 1024) && this.cache.size > 1) {
+      const k = this.cache.keys().next().value as string;
+      this.cacheBytes -= bytes(this.cache.get(k)!);
+      this.cache.delete(k);
+    }
     return buf;
   }
   private play(buf: AudioBuffer, rate: number, token: number): Promise<void> {
@@ -105,8 +115,9 @@ class VoiceEngine {
         || vs.find((x) => /google/i.test(x.name) && x.lang.startsWith("en")) || vs.find((x) => x.lang.startsWith("en"));
       if (v) { u.voice = v; u.lang = v.lang; }
       u.rate = rate || 1;
-      let done = false; const fin = () => { if (!done) { done = true; resolve(); } };
-      u.onend = u.onerror = fin; setTimeout(fin, 2500 + text.length * 90);
+      let done = false; let timer: ReturnType<typeof setTimeout> | null = null;
+      const fin = () => { if (!done) { done = true; if (timer) clearTimeout(timer); resolve(); } };
+      u.onend = u.onerror = fin; timer = setTimeout(fin, 2500 + text.length * 90);
       speechSynthesis.speak(u);
     });
   }
@@ -144,36 +155,39 @@ class VoiceEngine {
     const SRC = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SRC) return false;
     this.stopListening();
-    this.openMic();
+    const lt = ++this.listenTok;
+    void this.openMic(lt);
     const rec: SR = new SRC();
     rec.lang = o.lang; rec.interimResults = true; rec.continuous = false;
     let finalText = "", interim = "", err = "";
     rec.onresult = (e: any) => {
-      interim = "";
-      for (const r of e.results) { if (r.isFinal) finalText = r[0].transcript; else interim += r[0].transcript; }
-      o.onInterim(finalText || interim);
+      if (lt !== this.listenTok) return; // stale callback from a listener that was already replaced
+      finalText = ""; interim = "";
+      for (let i = 0; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; }
+      o.onInterim((finalText + " " + interim).trim());
     };
     rec.onerror = (e: any) => { if (e.error !== "no-speech" && e.error !== "aborted") err = e.error; };
     rec.onend = () => { if (this.rec === rec) this.rec = null; this.closeMic(); o.onEnd((finalText || interim).trim(), err); };
     this.rec = rec;
     try { rec.start(); return true; } catch { this.rec = null; this.closeMic(); return false; }
   }
-  stopListening() { const r = this.rec; this.rec = null; if (r) { r.onend = null; try { r.abort(); } catch {} } this.closeMic(); }
+  stopListening() { this.listenTok++; const r = this.rec; this.rec = null; if (r) { r.onend = null; try { r.abort(); } catch {} } this.closeMic(); }
   endListening() { try { this.rec?.stop(); } catch {} }
   get listening() { return !!this.rec; }
 
-  private async openMic() {
+  private async openMic(tok: number) {
     try {
       if (!navigator.mediaDevices?.getUserMedia) return;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      if (!this.rec) { stream.getTracks().forEach((t) => t.stop()); return; }
+      if (tok !== this.listenTok || !this.rec) { stream.getTracks().forEach((t) => t.stop()); return; } // listener ended while waiting for permission
       this.micStream = stream;
       const ctx = this.ensureCtx(); const an = ctx.createAnalyser(); an.fftSize = 256;
-      ctx.createMediaStreamSource(stream).connect(an);
+      this.micSource = ctx.createMediaStreamSource(stream); this.micSource.connect(an);
       this.micAnalyser = an; this.micData = new Uint8Array(an.frequencyBinCount);
     } catch { /* level meter is optional */ }
   }
   private closeMic() {
+    try { this.micSource?.disconnect(); } catch {} this.micSource = null;
     this.micStream?.getTracks().forEach((t) => t.stop()); this.micStream = null; this.micAnalyser = null; this.micData = null;
   }
 }

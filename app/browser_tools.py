@@ -146,11 +146,10 @@ def _settle(page, wait=1.2):
 
 
 def _blocked_url(url: str):
-    u = urlparse(url)
-    if u.scheme not in ("http", "https"):
+    from .web_tools import is_public_url
+    if urlparse(url).scheme not in ("http", "https"):
         return "Only http/https links are allowed."
-    host = (u.hostname or "").lower()
-    if host in ("localhost", "0.0.0.0") or re.match(r"^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)", host):
+    if not is_public_url(url):
         return "Local/internal addresses are blocked."
     return None
 

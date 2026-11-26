@@ -21,6 +21,8 @@ from pathlib import Path
 
 from .contacts_tools import resolve_contact
 
+from .util import atomic_write
+
 ROOT = Path(__file__).resolve().parent.parent
 PROFILE_DIR = ROOT / "data" / "wa_profile"
 DEBUG_SHOT = ROOT / "data" / "wa_debug.png"
@@ -325,7 +327,10 @@ def whatsapp_send_file(to: str, file_path: str, caption: str = "") -> str:
         file_path: Full path of the file on the PC.
         caption: Optional message with the file.
     """
-    p = Path(file_path).expanduser()
+    from .pc_tools import safe_path
+    p = safe_path(file_path)
+    if p is None:
+        return "That file is outside the folders I am allowed to send from. Use search_files first."
     if not p.is_file():
         return f"File not found: {file_path}. Use search_files first to get the correct path."
     if p.stat().st_size > 100 * 1024 * 1024:
@@ -363,7 +368,7 @@ def _load_sched() -> list:
 
 def _save_sched(items: list):
     SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SCHEDULE_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write(SCHEDULE_FILE, json.dumps(items, ensure_ascii=False, indent=2))
 
 
 def whatsapp_schedule(to: str, message: str, at_time: str, file_path: str = "") -> str:
@@ -381,6 +386,12 @@ def whatsapp_schedule(to: str, message: str, at_time: str, file_path: str = "") 
         return "Use the time format 'YYYY-MM-DD HH:MM'."
     if due <= datetime.now():
         return "That time has already passed."
+    if file_path:
+        from .pc_tools import safe_path
+        sp = safe_path(file_path)
+        if sp is None or not sp.is_file():
+            return "That file is missing or outside the folders I am allowed to send from."
+        file_path = str(sp)
     with _lock:
         items = _load_sched()
         items.append({"to": to, "message": message, "file": file_path, "due": due.strftime("%Y-%m-%d %H:%M"),

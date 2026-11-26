@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, X, ShieldAlert, Wrench, Loader2 } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -15,7 +15,7 @@ function ConfirmCard({ m }: { m: Msg }) {
       <div className="flex items-center gap-2 text-amber-300 text-sm font-medium"><ShieldAlert size={16} /> Needs your approval · {prettyTool(c.tool)}</div>
       {args.length > 0 && (
         <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
-          {args.map(([k, v]) => (<><dt key={k + "k"} className="text-slate-500">{k}</dt><dd key={k + "v"} className="break-words text-slate-200">{typeof v === "string" ? v : JSON.stringify(v)}</dd></>))}
+          {args.map(([k, v]) => (<Fragment key={k}><dt className="text-slate-500">{k}</dt><dd className="break-words text-slate-200">{typeof v === "string" ? v : JSON.stringify(v)}</dd></Fragment>))}
         </dl>
       )}
       <div className="mt-3 flex gap-2">
@@ -29,9 +29,15 @@ function ConfirmCard({ m }: { m: Msg }) {
 export default function Chat() {
   const { msgs, busy, activity, settings, interim } = useStore();
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs.length, busy, interim]);
+  const box = useRef<HTMLDivElement>(null);
+  const stick = useRef(true); // only follow new messages while the reader is already at the bottom
+  useEffect(() => {
+    if (!stick.current) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    end.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "end" });
+  }, [msgs.length, busy, interim]);
   return (
-    <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4" role="log" aria-live="polite" data-testid="chat-log">
+    <div ref={box} onScroll={() => { const b = box.current!; stick.current = b.scrollHeight - b.scrollTop - b.clientHeight < 120; }} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4" role="log" aria-live="polite" data-testid="chat-log">
       <div className="mx-auto flex max-w-2xl flex-col gap-3">
         <AnimatePresence initial={false}>
           {msgs.map((m) => (

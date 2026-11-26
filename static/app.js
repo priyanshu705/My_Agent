@@ -201,7 +201,9 @@ const CONFIRM_META = {
   browser_click_final: { icon: "🛒", title: "Confirm this final step?", fields: { summary: "Action", button: "Button", page: "Website" } },
 };
 
+let CONFIRM_ID = ""; // server-issued id of the action currently waiting for approval
 function confirmCard(conf, reply) {
+  CONFIRM_ID = conf.id || "";
   const meta = CONFIRM_META[conf.tool] || { icon: "⚠", title: "Approve this action?", fields: {} };
   const card = el("div", "confirm-card");
   const head = el("div", "ch");
@@ -566,7 +568,7 @@ async function confirmAction(approved) {
   resolveCard(approved);
   stopRec();
   setState("thinking"); typing(true); startActivity(); busy = true;
-  try { await handle(await post("/api/confirm", { approved, session_id: SESSION })); loadSessions(); }
+  try { await handle(await post("/api/confirm", { approved, confirm_id: CONFIRM_ID, session_id: SESSION })); loadSessions(); }
   catch (e) { typing(false); addMsg("bot", "Error: " + e.message); }
   finally { busy = false; stopActivity(); if (uiState === "thinking") setState("idle"); }
 }

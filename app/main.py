@@ -3,6 +3,7 @@ python -m uvicorn app.main:app --port 8000
 """
 
 import os
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,17 +11,42 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 from . import dashboard, tts_local, wakeword  # noqa: E402
 from .memory_tools import pop_due_reminders  # noqa: E402
+from .util import RateLimiter  # noqa: E402
 from .whatsapp_tools import pop_notices, start_scheduler  # noqa: E402
 
 app = FastAPI(title="My_Agent")
+SESSION_ID = r"^[A-Za-z0-9_-]{1,64}$"
+_limiter = RateLimiter()
+# path -> (max requests per minute for remote clients, for the PC itself)
+_LIMITS = {"/api/chat": (20, 60), "/api/confirm": (30, 60), "/api/tts": (20, 60), "/api/reset": (20, 60)}
+
+
+@app.middleware("http")
+async def limits(request: Request, call_next):
+    """Cap request body size and request rate on the expensive endpoints."""
+    if request.method == "POST":
+        try:
+            if int(request.headers.get("content-length") or 0) > 64_000:
+                return JSONResponse({"detail": "Request too large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"detail": "Bad Content-Length"}, status_code=400)
+    lim = _LIMITS.get(request.url.path)
+    if lim:
+        remote, local = lim
+        if not _limiter.allow(f"{request.url.path}:{dashboard.client_ip(request)}", local if dashboard.is_local(request) else remote):
+            return JSONResponse({"detail": "Too many requests. Please slow down."}, status_code=429)
+    return await call_next(request)
+
+
 app.middleware("http")(dashboard.guard)  # PC is always allowed; everyone else needs ACCESS_PIN login
 # Added after the guard so it is outermost: browser preflight (OPTIONS) is answered before auth.
 app.add_middleware(CORSMiddleware, allow_origins=dashboard.allowed_origins(),
@@ -31,6 +57,7 @@ wakeword.start()
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 _agent = None
+_agent_lock = threading.Lock()
 
 
 def google_connected() -> bool:
@@ -46,29 +73,37 @@ def demo_mode() -> bool:
 def agent():
     global _agent
     if _agent is None:
-        from . import safety
-        safety.harden()
-        from .agent import Agent
-        if demo_mode():
-            from .demo_agent import DemoAgent
-            _agent = DemoAgent()
-        else:
-            try:
-                _agent = Agent()
-            except RuntimeError as e:
-                raise HTTPException(500, str(e))
-        dashboard.install_activity_hook(_agent)
+        with _agent_lock:
+            if _agent is None:
+                from . import safety
+                safety.harden()
+                from .agent import Agent
+                if demo_mode():
+                    from .demo_agent import DemoAgent
+                    new = DemoAgent()
+                else:
+                    try:
+                        new = Agent()
+                    except RuntimeError as e:
+                        raise HTTPException(500, str(e))
+                dashboard.install_activity_hook(new)
+                _agent = new
     return _agent
 
 
 class ChatIn(BaseModel):
-    text: str
-    session_id: str = "default"
+    text: str = Field(max_length=4000)
+    session_id: str = Field(default="default", pattern=SESSION_ID)
 
 
 class ConfirmIn(BaseModel):
     approved: bool
-    session_id: str = "default"
+    confirm_id: str = Field(default="", max_length=64)
+    session_id: str = Field(default="default", pattern=SESSION_ID)
+
+
+class ResetIn(BaseModel):
+    session_id: str = Field(default="default", pattern=SESSION_ID)
 
 
 @app.get("/")
@@ -102,9 +137,9 @@ def wake():
 
 
 class TtsIn(BaseModel):
-    text: str
-    voice: str = "hf_alpha"
-    speed: float = 1.0
+    text: str = Field(max_length=1500)
+    voice: str = Field(default="hf_alpha", pattern=r"^[A-Za-z0-9_]{1,32}$")
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
 
 
 @app.post("/api/tts")
@@ -128,13 +163,13 @@ def chat(body: ChatIn):
 
 @app.post("/api/confirm")
 def confirm(body: ConfirmIn):
-    result = agent().confirm(body.session_id, body.approved)
+    result = agent().confirm(body.session_id, body.approved, body.confirm_id)
     dashboard.record(body.session_id, "Haan" if body.approved else "Na", result)
     return result
 
 
 @app.post("/api/reset")
-def reset(body: ConfirmIn):
+def reset(body: ResetIn):
     agent().reset(body.session_id)
     return {"ok": True}
 

@@ -4,6 +4,7 @@ Used when GEMINI_API_KEY is missing or DEMO_MODE=1. It runs the same tools as
 the real agent, but it is far less smart than Gemini (no free-form questions).
 """
 
+import secrets
 import re
 
 from datetime import datetime, timedelta
@@ -99,35 +100,39 @@ class DemoAgent:
     demo = True
 
     def __init__(self):
-        self.pending: dict[str, tuple] = {}
+        self.pending: dict[str, tuple] = {}  # session -> (confirm_id, tool, args)
 
     def _run(self, name, args):
         try:
             result = str(TOOL_MAP[name](**args))
         except (Exception, SystemExit) as e:
-            result = f"Error: {e}"
+            result = f"Error: {type(e).__name__}"
         return {"reply": result, "actions": [{"tool": name, "args": args, "result": result}]}
 
     def chat(self, session_id: str, text: str) -> dict:
         if session_id in self.pending:
             ans = yes_no(text)
             if ans is not None:
-                return self.confirm(session_id, ans)
+                return self.confirm(session_id, ans, self.pending[session_id][0])
             self.pending.pop(session_id)
         name, args = parse(text)
         if name is None:
             return {"reply": args, "actions": []}
         if name in NEEDS_CONFIRMATION:
-            self.pending[session_id] = (name, args)
+            cid = secrets.token_urlsafe(16)
+            self.pending[session_id] = (cid, name, args)
             return {"reply": f"Confirm karo: {describe(name, args)}. Haan ya na?",
-                    "confirm": {"tool": name, "args": args}, "actions": []}
+                    "confirm": {"id": cid, "tool": name, "args": args}, "actions": []}
         return self._run(name, args)
 
-    def confirm(self, session_id: str, approved: bool) -> dict:
-        p = self.pending.pop(session_id, None)
+    def confirm(self, session_id: str, approved: bool, confirm_id: str = "") -> dict:
+        p = self.pending.get(session_id)
         if not p:
             return {"reply": "Abhi koi kaam confirm karne ke liye pending nahi hai.", "actions": []}
-        return self._run(*p) if approved else {"reply": "Theek hai, cancel kar diya.", "actions": []}
+        if not confirm_id or not secrets.compare_digest(str(confirm_id), p[0]):
+            return {"reply": "That confirmation is no longer valid. Please ask again.", "actions": [], "error": True}
+        self.pending.pop(session_id, None)
+        return self._run(p[1], p[2]) if approved else {"reply": "Theek hai, cancel kar diya.", "actions": []}
 
     def reset(self, session_id: str) -> None:
         self.pending.pop(session_id, None)

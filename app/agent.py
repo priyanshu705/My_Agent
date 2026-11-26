@@ -1,6 +1,11 @@
 """The agent brain: Gemini + function calling, with a confirm step for risky actions."""
 
+import inspect
+import logging
 import os
+import secrets
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +30,8 @@ MAX_STEPS = 8
 # Google retires models without much notice (gemini-2.5-flash already 404s), so never rely on a single name.
 GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"]
 MAX_HISTORY = 40
+CHAT_DEADLINE = float(os.getenv("CHAT_DEADLINE", "90"))  # seconds for one whole chat turn
+log = logging.getLogger("agent")
 
 AGENT_NAME = os.getenv("AGENT_NAME", "Agent")
 USER_NAME = os.getenv("USER_NAME", "Om")
@@ -96,29 +103,41 @@ class Agent:
         self.model = os.getenv("GEMINI_MODEL", GEMINI_FALLBACKS[0])
         self._good_model = None
         self.sessions: dict[str, dict] = {}
+        self._locks: dict[str, threading.RLock] = {}
+        self._guard = threading.Lock()
 
     # ---------- public ----------
     def chat(self, session_id: str, text: str) -> dict:
-        s = self._session(session_id)
-        if s.get("pending"):
-            answer = yes_no(text)
-            if answer is not None:
-                return self.confirm(session_id, answer)
-            # user moved on: cancel the waiting actions so the history stays valid
-            p = s["pending"]
-            for call in p["remaining"]:
-                p["responses"].append(types.Part.from_function_response(
-                    name=call.name, response={"result": "The user skipped this action."}))
-            s["contents"].append(types.Content(role="user", parts=p["responses"]))
-            s["pending"] = None
-        s["contents"].append(types.Content(role="user", parts=[types.Part.from_text(text=text)]))
-        return self._loop(s)
+        with self._lock(session_id):
+            s = self._session(session_id)
+            if s.get("pending"):
+                answer = yes_no(text)
+                if answer is not None:
+                    return self._confirm(session_id, answer, s["pending"]["id"])
+                # user moved on: cancel the waiting actions so the history stays valid
+                p = s["pending"]
+                for call in p["remaining"]:
+                    p["responses"].append(types.Part.from_function_response(
+                        name=call.name, response={"result": "The user skipped this action."}))
+                s["contents"].append(types.Content(role="user", parts=p["responses"]))
+                s["pending"] = None
+            self._trim(s)
+            s["contents"].append(types.Content(role="user", parts=[types.Part.from_text(text=text)]))
+            return self._loop(s)
 
-    def confirm(self, session_id: str, approved: bool) -> dict:
+    def confirm(self, session_id: str, approved: bool, confirm_id: str = "") -> dict:
+        """Approve or reject the waiting action. confirm_id must match the one issued with the request."""
+        with self._lock(session_id):
+            return self._confirm(session_id, approved, confirm_id)
+
+    def _confirm(self, session_id: str, approved: bool, confirm_id: str) -> dict:
         s = self._session(session_id)
         p = s.get("pending")
         if not p:
             return {"reply": "There is nothing waiting for confirmation.", "actions": []}
+        if not confirm_id or not secrets.compare_digest(str(confirm_id), p["id"]):
+            return {"reply": "That confirmation is no longer valid. Please ask again.", "actions": [], "error": True}
+        s["pending"] = None  # one-time use: cleared before anything runs
         call = p["remaining"].pop(0)
         if approved:
             result = self._execute(call)
@@ -126,14 +145,18 @@ class Agent:
         else:
             result = "The user cancelled this action."
         p["responses"].append(types.Part.from_function_response(name=call.name, response={"result": result}))
-        s["pending"] = None
         out = self._run_calls(s, p)
         return out if out else self._loop(s, p["actions"])
 
     def reset(self, session_id: str) -> None:
-        self.sessions.pop(session_id, None)
+        with self._lock(session_id):
+            self.sessions.pop(session_id, None)
 
     # ---------- internals ----------
+    def _lock(self, sid: str) -> threading.RLock:
+        with self._guard:
+            return self._locks.setdefault(sid, threading.RLock())
+
     def _session(self, sid: str) -> dict:
         return self.sessions.setdefault(sid, {"contents": [], "pending": None})
 
@@ -145,7 +168,7 @@ class Agent:
             temperature=0.6,
         )
 
-    def _generate(self, contents):
+    def _generate(self, contents, deadline: float | None = None):
         """Router first (many free providers behind one endpoint), then Gemini with a list of model names."""
         cfg = self._config()
         r = llm_router.generate(contents, cfg.system_instruction, ALL_TOOLS)
@@ -159,6 +182,8 @@ class Agent:
                 order.append(m)
         last = None
         for m in order[:5]:
+            if deadline and time.monotonic() > deadline:
+                raise RuntimeError("The AI service is taking too long. Please try again in a minute.")
             try:
                 resp = self.client.models.generate_content(model=m, contents=contents, config=cfg)
                 self._good_model = m
@@ -179,16 +204,24 @@ class Agent:
         fn = TOOL_MAP.get(call.name)
         if not fn:
             return f"Unknown tool {call.name}"
+        args = dict(call.args or {})
         try:
-            return str(fn(**dict(call.args or {})))
+            inspect.signature(fn).bind(**args)  # reject missing/unknown/malformed arguments before running anything
+        except TypeError:
+            return "Error: the tool was called with invalid arguments."
+        try:
+            return str(fn(**args))
         except (Exception, SystemExit) as e:  # report errors back to the model instead of crashing
-            return f"Error: {e}"
+            log.exception("tool %s failed", call.name)
+            msg = str(e).replace(str(Path.home()), "~")[:160]
+            return f"Error: {type(e).__name__}: {msg}"
 
     def _run_calls(self, s: dict, p: dict):
         """Run queued function calls. Returns a confirm-request dict if one needs approval, else None."""
         while p["remaining"]:
             call = p["remaining"][0]
             if call.name in NEEDS_CONFIRMATION:
+                p["id"] = secrets.token_urlsafe(16)
                 s["pending"] = p
                 args = dict(call.args or {})
                 shown = dict(args)
@@ -199,7 +232,7 @@ class Agent:
                     args = shown
                 return {
                     "reply": f"Please confirm: {describe(call.name, args)}. Yes or no?",
-                    "confirm": {"tool": call.name, "args": shown},
+                    "confirm": {"id": p["id"], "tool": call.name, "args": shown},
                     "actions": p["actions"],
                 }
             p["remaining"].pop(0)
@@ -211,9 +244,12 @@ class Agent:
 
     def _loop(self, s: dict, actions=None) -> dict:
         actions = actions if actions is not None else []
+        deadline = time.monotonic() + CHAT_DEADLINE
         for _ in range(MAX_STEPS):
+            if time.monotonic() > deadline:
+                return {"reply": "That took too long, so I stopped here.", "actions": actions}
             try:
-                resp = self._generate(s["contents"])
+                resp = self._generate(s["contents"], deadline)
             except Exception as e:
                 msg = str(e) if isinstance(e, RuntimeError) else f"Could not reach the AI service: {e}"
                 return {"reply": msg, "actions": actions, "error": True}
@@ -223,7 +259,6 @@ class Agent:
             s["contents"].append(cand.content)
             calls = resp.function_calls or []
             if not calls:
-                self._trim(s)
                 return {"reply": (resp.text or "Done.").strip(), "actions": actions}
             p = {"remaining": list(calls), "responses": [], "actions": actions}
             out = self._run_calls(s, p)
