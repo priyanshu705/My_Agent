@@ -1,7 +1,7 @@
 // Responsive sweep: 9 viewports x 9 views. Checks horizontal overflow, clipped elements, tiny touch targets, console errors.
 const fs = require("fs"); const { launch, open, gotoView, NAMES } = require("./lib");
 const VPS = [[320, 568], [375, 812], [390, 844], [430, 932], [768, 1024], [1024, 768], [1366, 768], [1440, 900], [1920, 1080]];
-const VIEWS = Object.keys(NAMES);
+const VIEWS = process.env.VIEWS ? process.env.VIEWS.split(",") : Object.keys(NAMES); const PARTIAL = !!process.env.VIEWS; // VIEWS=settings runs a targeted sweep and does not overwrite the full results
 
 const MEASURE = () => {
   const vw = innerWidth; const out = { overflowX: document.documentElement.scrollWidth > vw + 1 || document.body.scrollWidth > vw + 1, clipped: [], small24: [], small44: 0 };
@@ -36,11 +36,11 @@ const MEASURE = () => {
     console.log("done", w + "x" + h);
   }
   // empty-data state at three sizes
-  for (const [w, h] of [[320, 568], [768, 1024], [1440, 900]]) for (const view of ["overview", "chat", "tasks", "memory", "automation"]) {
+  if (!PARTIAL) for (const [w, h] of [[320, 568], [768, 1024], [1440, 900]]) for (const view of ["overview", "chat", "tasks", "memory", "automation"]) {
     const { ctx, p } = await open(b, { viewport: { width: w, height: h }, mock: { empty: true }, wait: 900 }); if (view !== "overview") await gotoView(p, view); await p.waitForTimeout(300);
     const m = await p.evaluate(MEASURE); const row = { vp: `${w}x${h}`, view: view + " (empty data)", overflowX: m.overflowX, clipped: m.clipped.slice(0, 3), small24: m.small24.slice(0, 5), small44: m.small44, errors: p.errors.slice(0, 2) };
     row.pass = !m.overflowX && m.clipped.length === 0 && m.small24.length === 0 && p.errors.length === 0; if (!row.pass) { fails++; console.log("FAIL", row.vp, row.view, JSON.stringify(row)); } rows.push(row); await ctx.close();
   }
-  await b.close(); fs.writeFileSync("e2e/results/responsive.json", JSON.stringify(rows, null, 2));
+  await b.close(); if (!PARTIAL) fs.writeFileSync("e2e/results/responsive.json", JSON.stringify(rows, null, 2));
   console.log(`${rows.length - fails}/${rows.length} layouts passed; targets under 44px (advisory): ${rows.reduce((a, r) => a + r.small44, 0)}`); process.exit(fails ? 1 : 0);
 })().catch((e) => { console.error("HARNESS ERROR", e); process.exit(2); });

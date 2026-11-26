@@ -2,7 +2,8 @@
 const fs = require("fs"); const path = require("path"); const { launch, open, gotoView, NAMES } = require("./lib");
 const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
-const VIEWS = Object.keys(NAMES); const results = { axe: [], structure: [] }; let bad = 0;
+// VIEWS=settings runs a targeted audit and does not overwrite the full results
+const VIEWS = process.env.VIEWS ? process.env.VIEWS.split(",") : Object.keys(NAMES); const PARTIAL = !!process.env.VIEWS; const results = { axe: [], structure: [] }; let bad = 0;
 
 (async () => {
   const b = await launch();
@@ -45,7 +46,7 @@ const VIEWS = Object.keys(NAMES); const results = { axe: [], structure: [] }; le
   { const { ctx, p } = await open(b, { viewport: { width: 320, height: 568 }, wait: 900 }); await gotoView(p, "settings");
     await p.evaluate(() => { document.documentElement.style.fontSize = "200%"; }); await p.waitForTimeout(300);
     S("200% text size at 320px: no horizontal scrolling (WCAG 1.4.4 / 1.4.10)", await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await ctx.close(); }
-  await b.close(); fs.writeFileSync("e2e/results/a11y.json", JSON.stringify(results, null, 2));
+  await b.close(); if (!PARTIAL) fs.writeFileSync("e2e/results/a11y.json", JSON.stringify(results, null, 2));
   const total = results.axe.length; const clean = results.axe.filter((r) => r.violations.length === 0).length;
   console.log(`axe: ${clean}/${total} pages clean; structure: ${results.structure.filter((s) => s.pass).length}/${results.structure.length}`); process.exit(bad ? 1 : 0);
 })().catch((e) => { console.error("HARNESS ERROR", e); process.exit(2); });
