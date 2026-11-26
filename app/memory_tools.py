@@ -4,6 +4,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from .util import atomic_write
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "memory.json"
 _lock = threading.Lock()
@@ -20,7 +21,7 @@ def _load() -> dict:
 
 def _save(db: dict) -> None:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DATA_FILE.write_text(json.dumps(db, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write(DATA_FILE, json.dumps(db, ensure_ascii=False, indent=2))
 
 
 def _now() -> str:

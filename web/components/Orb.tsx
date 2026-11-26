@@ -8,6 +8,7 @@ import type { UiState } from "@/lib/types";
 export default function Orb({ size = 220, forceState, onClick }: { size?: number; forceState?: UiState; onClick?: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<UiState>("idle");
+  const drawRef = useRef<(() => void) | null>(null);
   const ui = useStore((s) => s.ui);
   stateRef.current = forceState ?? ui;
 
@@ -51,11 +52,17 @@ export default function Orb({ size = 220, forceState, onClick }: { size?: number
       const hl = ctx.createRadialGradient(c - base * .35, c - base * .4, 2, c - base * .2, c - base * .2, base);
       hl.addColorStop(0, "rgba(255,255,255,.55)"); hl.addColorStop(.5, "rgba(255,255,255,.06)"); hl.addColorStop(1, "rgba(255,255,255,0)");
       ctx.beginPath(); ctx.arc(c, c, base * .98, 0, 7); ctx.fillStyle = hl; ctx.fill();
-      raf = requestAnimationFrame(draw);
+      if (!reduce && !document.hidden) raf = requestAnimationFrame(draw);
     };
+    drawRef.current = draw;
+    // pause the loop while the tab is hidden; with reduced motion the orb is drawn once per state change instead of animating
+    const onVis = () => { cancelAnimationFrame(raf); if (!document.hidden && !reduce) raf = requestAnimationFrame(draw); };
+    document.addEventListener("visibilitychange", onVis);
     draw();
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", onVis); drawRef.current = null; };
   }, [size]);
+
+  useEffect(() => { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) drawRef.current?.(); }, [ui, forceState]);
 
   return <canvas ref={ref} onClick={onClick} style={{ width: size, height: size }} className={onClick ? "cursor-pointer" : ""} role={onClick ? "button" : "img"} aria-label="Assistant status orb" />;
 }

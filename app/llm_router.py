@@ -98,8 +98,8 @@ def from_response(d: dict):
         try:
             args = json.loads(f.get("arguments") or "{}")
         except ValueError:
-            args = {}
-        fc = types.FunctionCall(name=f.get("name", ""), args=args if isinstance(args, dict) else {}, id=tc.get("id"))
+            args = {"_malformed_arguments": True}  # makes the tool call fail validation instead of running with {}
+        fc = types.FunctionCall(name=f.get("name", ""), args=args if isinstance(args, dict) else {"_malformed_arguments": True}, id=tc.get("id"))
         fcalls.append(fc)
         parts.append(types.Part(function_call=fc))
     if not parts:

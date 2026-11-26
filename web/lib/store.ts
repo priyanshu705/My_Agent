@@ -11,6 +11,20 @@ const ls = {
   set(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
+const ACCENTS = ["cyan", "violet", "emerald", "amber", "rose"];
+/** Keep only well-typed values from localStorage so a corrupted or old entry cannot break the UI. */
+function cleanSettings(raw: unknown): Settings {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const d = DEFAULT_SETTINGS;
+  const str = (v: unknown, def: string, max = 40) => (typeof v === "string" && v.length <= max ? v : def);
+  const bool = (v: unknown, def: boolean) => (typeof v === "boolean" ? v : def);
+  const rate = typeof r.rate === "number" && r.rate >= 0.5 && r.rate <= 2 ? r.rate : d.rate;
+  const accent = typeof r.accent === "string" && ACCENTS.includes(r.accent) ? r.accent : d.accent;
+  return { name: str(r.name, d.name), voice: str(r.voice, d.voice), rate, speak: bool(r.speak, d.speak), convo: bool(r.convo, d.convo),
+    srLang: str(r.srLang, d.srLang, 12), accent, showTools: bool(r.showTools, d.showTools) };
+}
+const SID_OK = /^[A-Za-z0-9_-]{1,64}$/;
+
 const DEFAULT_SETTINGS: Settings = { name: "", voice: "Sulafat", rate: 1, speak: true, convo: true, srLang: "en-IN", accent: "cyan", showTools: true };
 const IDLE_ACT: Activity = { phase: "idle", steps: [], done: true };
 
@@ -35,6 +49,9 @@ interface State {
 
 let actTimer: ReturnType<typeof setInterval> | null = null;
 let jobTimer: ReturnType<typeof setInterval> | null = null;
+let dashTimer: ReturnType<typeof setInterval> | null = null;
+let remindTimer: ReturnType<typeof setInterval> | null = null;
+let gen = 0; // bumped on logout / session switch so late responses from the old state are ignored
 let emptyCount = 0;
 
 export const useStore = create<State>((set, get) => {
@@ -52,10 +69,11 @@ export const useStore = create<State>((set, get) => {
   };
   const startActivity = (sid: string) => {
     stopActivity();
+    const g = gen;
     actTimer = setInterval(async () => {
       try {
         const a = await api<Activity>("/api/activity?session_id=" + encodeURIComponent(sid), { timeout: 6000 });
-        if (actTimer && (get().busy || !a.done)) set({ activity: a });
+        if (g === gen && get().sid === sid && actTimer && (get().busy || !a.done)) set({ activity: a });
       } catch { /* transient */ }
     }, 600);
   };
@@ -89,21 +107,45 @@ export const useStore = create<State>((set, get) => {
     if (!ok) set({ convoActive: false, ui: "idle" });
   };
 
+  const stopJob = () => { if (jobTimer) clearInterval(jobTimer); jobTimer = null; };
+  const stopTimers = () => {
+    if (dashTimer) clearInterval(dashTimer); dashTimer = null;
+    if (remindTimer) clearInterval(remindTimer); remindTimer = null;
+  };
+  const startTimers = () => {
+    stopTimers(); // single place that creates the background timers, so login/reload can never stack them
+    dashTimer = setInterval(() => { if (get().authed) void get().refreshDash(); }, 20000);
+    remindTimer = setInterval(async () => {
+      if (!get().authed) return;
+      try {
+        const r = await api<{ due: string[]; notices: string[] }>("/api/reminders/due", { timeout: 10000 });
+        for (const t of r.due || []) {
+          set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "bot", text: "Reminder: " + t, at: nowHM() }] }));
+          get().toast("Reminder: " + t);
+          if ("Notification" in window && Notification.permission === "granted") new Notification("Reminder", { body: t });
+          void speakReply("Reminder: " + t);
+        }
+      } catch {}
+    }, 30000);
+  };
+
   const pollJob = (jobId: number, sid: string) => {
-    if (jobTimer) clearInterval(jobTimer);
+    stopJob();
+    const g = gen;
     let n = 0;
     jobTimer = setInterval(async () => {
       n++;
       try {
         const r = await api<any>(`/api/jobs/${jobId}`, { timeout: 15000 });
+        if (g !== gen) return;
         if (r.status === "running" && n < 300) return;
-        if (jobTimer) clearInterval(jobTimer); jobTimer = null; stopActivity();
+        stopJob(); stopActivity();
         if (get().sid !== sid) return;
         const reply = r.reply || "Done.";
         set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "bot", text: reply, at: nowHM(), actions: r.actions, confirm: r.confirm ?? null }], busy: false, ui: "idle" }));
         void speakReply(reply).then(() => afterReply(!!r.confirm));
         void get().refreshDash();
-      } catch (e) { if (n > 20) { if (jobTimer) clearInterval(jobTimer); jobTimer = null; } }
+      } catch (e) { if (n > 20) stopJob(); }
     }, 3000);
   };
 
@@ -139,10 +181,10 @@ export const useStore = create<State>((set, get) => {
     },
 
     init: async () => {
-      const settings = { ...DEFAULT_SETTINGS, ...ls.get<Partial<Settings>>("settings", {}) };
+      const settings = cleanSettings(ls.get<unknown>("settings", {}));
       document.documentElement.dataset.accent = settings.accent;
-      let sid = ls.get<string>("sid", ""); if (!sid) { sid = uid(); ls.set("sid", sid); }
-      setAuthLostHandler(() => { setToken(""); set({ authed: false, loginError: "Your session expired. Please sign in again.", busy: false, ui: "idle" }); stopActivity(); });
+      let sid = ls.get<string>("sid", ""); if (typeof sid !== "string" || !SID_OK.test(sid)) { sid = uid(); ls.set("sid", sid); }
+      setAuthLostHandler(() => { gen++; stopJob(); stopTimers(); voice.stop(); voice.stopListening(); setToken(""); set({ authed: false, loginError: "Your session expired. Please sign in again.", busy: false, ui: "idle" }); stopActivity(); });
       set({ settings, sid });
       try { const cfg = await api("/api/config", { timeout: 15000 }); set({ cfg }); } catch {}
       if (getToken()) {
@@ -152,19 +194,7 @@ export const useStore = create<State>((set, get) => {
       if (get().authed) {
         await get().openSession(sid);
         void get().refreshDash();
-        setInterval(() => { if (get().authed) void get().refreshDash(); }, 20000);
-        setInterval(async () => {
-          if (!get().authed) return;
-          try {
-            const r = await api<{ due: string[]; notices: string[] }>("/api/reminders/due", { timeout: 10000 });
-            for (const t of r.due || []) {
-              set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "bot", text: "Reminder: " + t, at: nowHM() }] }));
-              get().toast("Reminder: " + t);
-              if ("Notification" in window && Notification.permission === "granted") new Notification("Reminder", { body: t });
-              void speakReply("Reminder: " + t);
-            }
-          } catch {}
-        }, 30000);
+        startTimers();
         if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission();
       }
     },
@@ -176,23 +206,23 @@ export const useStore = create<State>((set, get) => {
         setToken(d.token); set({ authed: true, loggingIn: false });
         voice.unlock();
         await get().openSession(get().sid); void get().refreshDash();
-        setInterval(() => { if (get().authed) void get().refreshDash(); }, 20000);
+        startTimers();
       } catch (e: any) { set({ loggingIn: false, loginError: e?.message || "Sign-in failed." }); }
     },
-    logout: () => { setToken(""); voice.stop(); voice.stopListening(); stopActivity(); set({ authed: false, msgs: [], convoActive: false, ui: "idle" }); },
+    logout: () => { gen++; setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); set({ authed: false, msgs: [], convoActive: false, ui: "idle" }); },
 
     refreshSessions: async () => { try { const r = await api<{ sessions: Session[] }>("/api/sessions"); set({ sessions: r.sessions }); } catch {} },
     refreshDash: async () => {
       try {
         const d = await api<any>("/api/dashboard/local");
-        set((s) => ({ dash: { ...s.dash, todos: d.todos, notes: d.notes, reminders: d.reminders }, pcOnline: !!d.status?.pc }));
+        set((s) => ({ dash: { ...s.dash, todos: d.todos ?? [], notes: d.notes ?? [], reminders: d.reminders ?? [] }, pcOnline: !!d.status?.pc }));
       } catch {}
       try { const c = await api<any>("/api/dashboard/calendar"); set((s) => ({ dash: { ...s.dash, calendar: c.events || [], calendarConnected: !!c.connected } })); } catch {}
       try { const m = await api<any>("/api/dashboard/mail"); set((s) => ({ dash: { ...s.dash, mail: m.mails || [], mailConnected: !!m.connected } })); } catch {}
     },
 
     openSession: async (id) => {
-      ls.set("sid", id); voice.stop(); stopActivity();
+      gen++; stopJob(); ls.set("sid", id); voice.stop(); stopActivity();
       set({ sid: id, sidebarOpen: false, activity: IDLE_ACT, busy: false, ui: "idle" });
       try {
         const r = await api<{ messages: any[] }>("/api/sessions/" + encodeURIComponent(id));
@@ -225,10 +255,12 @@ export const useStore = create<State>((set, get) => {
 
     confirm: async (approved) => {
       const sid = get().sid;
+      const confirmId = [...get().msgs].reverse().find((m) => m.confirm)?.confirm?.id || "";
+      if (!confirmId) { get().toast("That request has expired. Please ask again."); return; }
       set((s) => ({ msgs: s.msgs.map((m, i, a) => (i === a.length - 1 || m.confirm ? { ...m, confirm: null } : m)), busy: true, ui: "thinking" }));
       voice.stop(); startActivity(sid);
       set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "user", text: approved ? "Yes, go ahead." : "No, cancel it.", at: nowHM() }] }));
-      try { handle(sid, await api<any>("/api/confirm", { method: "POST", json: { approved, session_id: sid }, timeout: 70000 })); }
+      try { handle(sid, await api<any>("/api/confirm", { method: "POST", json: { approved, confirm_id: confirmId, session_id: sid }, timeout: 70000 })); }
       catch (e: any) { stopActivity(); if (e instanceof AuthError) return; set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.message || e), at: nowHM() }], busy: false, ui: "idle" })); }
     },
 

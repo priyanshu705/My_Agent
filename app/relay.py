@@ -84,7 +84,7 @@ class Relay:
             if job["kind"] == "chat":
                 out = self.agent.chat(local_sid, str(p.get("text", ""))[:3000])
             elif job["kind"] == "confirm":
-                out = self.agent.confirm(local_sid, bool(p.get("approved")))
+                out = self.agent.confirm(local_sid, bool(p.get("approved")), str(p.get("confirm_id", "")))
             else:
                 return {"job_id": job["id"], "error": f"Unknown job type {job['kind']}"}
         except (Exception, SystemExit) as e:

@@ -100,7 +100,32 @@ def valid_token(tok: str) -> bool:
 
 
 def client_ip(req: Request) -> str:
-    return (req.headers.get("x-forwarded-for", "").split(",")[0].strip() or (req.client.host if req.client else "?"))
+    # Vercel sets x-real-ip / overwrites x-forwarded-for itself, so these cannot be forged by the caller
+    return (req.headers.get("x-real-ip", "").strip() or req.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (req.client.host if req.client else "?"))
+
+
+_RATE = {"/api/chat": 20, "/api/confirm": 30, "/api/tts": 20, "/api/reset": 20}  # requests per minute per client
+SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def rate_ok(path: str, ip: str) -> bool:
+    """Per-minute counter in the shared kv table (serverless instances do not share memory)."""
+    limit = _RATE.get(path)
+    if not limit:
+        return True
+    key = "rate:%s:%s:%d" % (path, hashlib.sha256(ip.encode()).hexdigest()[:12], int(time.time() // 60))
+    rec = kv_get(key) or {"n": 0}
+    if rec.get("n", 0) >= limit:
+        return False
+    kv_set(key, {"n": rec.get("n", 0) + 1})
+    return True
+
+
+def check_sid(sid: str) -> str:
+    if not SESSION_RE.fullmatch(sid or ""):
+        raise HTTPException(400, "Invalid session id")
+    return sid
 
 
 OPEN_PATHS = {"/api/ping", "/api/login", "/api/config", "/api/google/callback"}
@@ -130,6 +155,17 @@ async def guard(request: Request, call_next):
     tok = request.headers.get("authorization", "")[7:] if request.headers.get("authorization", "").lower().startswith("bearer ") else ""
     if not valid_token(tok):
         return JSONResponse({"detail": "Login required"}, status_code=401)
+    if request.method == "POST":
+        try:
+            if int(request.headers.get("content-length") or 0) > 64_000:
+                return JSONResponse({"detail": "Request too large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"detail": "Bad Content-Length"}, status_code=400)
+    try:
+        if not rate_ok(path, client_ip(request)):
+            return JSONResponse({"detail": "Too many requests. Please slow down."}, status_code=429)
+    except HTTPException:
+        pass  # database down: do not lock the owner out
     return await call_next(request)
 
 
@@ -574,7 +610,7 @@ def pc_response(sid: str, r: dict) -> dict:
     out = {"reply": r.get("reply") or "Done.", "actions": r.get("actions") or [], "job_id": r["job_id"]}
     if r.get("confirm"):
         out["confirm"] = r["confirm"]
-        kv_set(f"pcpend:{sid}", {"job": r["job_id"], "at": time.time()})
+        kv_set(f"pcpend:{sid}", {"job": r["job_id"], "at": time.time(), "cid": str((r["confirm"] or {}).get("id", ""))})
     else:
         kv_set(f"pcpend:{sid}", {})
     return out
@@ -873,12 +909,17 @@ def system_prompt(pc: bool = False) -> str:
 
 class ChatIn(BaseModel):
     text: str = Field(max_length=4000)
-    session_id: str = Field(default="default", max_length=80)
+    session_id: str = Field(default="default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class ConfirmIn(BaseModel):
     approved: bool
-    session_id: str = Field(default="default", max_length=80)
+    confirm_id: str = Field(default="", max_length=64)
+    session_id: str = Field(default="default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
+
+
+class ResetIn(BaseModel):
+    session_id: str = Field(default="default", pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def ensure_session(sid: str, first_text: str) -> None:
@@ -956,7 +997,7 @@ def chat(body: ChatIn):
                     except HTTPException as e:
                         out = f"Error: {e.detail}"
                     except Exception as e:
-                        out = f"Error: {e}"
+                        out = f"Error: {type(e).__name__}"
                     actions.append({"tool": name, "args": args, "result": str(out)[:300]})
                 fr = {"name": name, "response": {"result": str(out)[:6000]}}
                 if c.get("id"):
@@ -980,10 +1021,13 @@ def confirm(body: ConfirmIn):
     pend = kv_get(f"pcpend:{sid}")
     if not pend or not pend.get("job"):
         return {"reply": "There is nothing waiting for confirmation.", "actions": []}
-    kv_set(f"pcpend:{sid}", {})
+    if (not body.confirm_id or not pend.get("cid") or not hmac.compare_digest(body.confirm_id, str(pend["cid"]))
+            or time.time() - float(pend.get("at", 0)) > 1800):
+        return {"reply": "That confirmation is no longer valid. Please ask again.", "actions": [], "error": True}
+    kv_set(f"pcpend:{sid}", {})  # one-time use: cleared before the PC is told
     tr = Trace(sid)
     tr.step("pc", "Your answer is on its way to the PC" if body.approved else "Cancelling on the PC")
-    r = pc_run(sid, "confirm", {"approved": body.approved}, wait=50)
+    r = pc_run(sid, "confirm", {"approved": body.approved, "confirm_id": body.confirm_id}, wait=50)
     out = pc_response(sid, r)
     tr.step("answer", "Answer ready", done=True)
     if r.get("status") == "done":
@@ -1089,7 +1133,7 @@ def tts(body: TtsIn):
 
 
 @app.post("/api/reset")
-def reset(body: ConfirmIn):
+def reset(body: ResetIn):
     sb("DELETE", "agent_messages", {"session_id": f"eq.{body.session_id}"}, prefer="return=minimal")
     return {"ok": True}
 
@@ -1102,6 +1146,7 @@ def sessions():
 
 @app.get("/api/sessions/{sid}")
 def session_messages(sid: str):
+    check_sid(sid)
     rows = sb("GET", "agent_messages", {"session_id": f"eq.{sid}", "select": "role,content,actions,created_at", "order": "id.asc", "limit": "200"})
     return {"id": sid, "messages": [{"role": r["role"], "text": r["content"], "at": fmt_local(r["created_at"]),
                                       "actions": r["actions"]} for r in rows]}
@@ -1109,6 +1154,7 @@ def session_messages(sid: str):
 
 @app.delete("/api/sessions/{sid}")
 def delete_session(sid: str):
+    check_sid(sid)
     sb("DELETE", "agent_sessions", {"id": f"eq.{sid}"}, prefer="return=minimal")
     return {"ok": True}
 
