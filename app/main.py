@@ -123,6 +123,35 @@ class ResetIn(BaseModel):
     session_id: str = Field(default="default", pattern=SESSION_ID)
 
 
+def model_name() -> str:
+    """Name of the model answering chats (never a key). Safe to show in the UI."""
+    if demo_mode():
+        return "Demo mode (rule-based)"
+    from . import llm_router
+    if llm_router.configured():
+        return "AI router (" + os.getenv("LLM_ROUTER_MODEL", "auto") + ")"
+    try:
+        from .agent import GEMINI_FALLBACKS
+        return os.getenv("GEMINI_MODEL", GEMINI_FALLBACKS[0])
+    except Exception:
+        return os.getenv("GEMINI_MODEL", "Gemini")
+
+
+def integration_flags() -> dict:
+    """Non-secret on/off state of optional features, for the Integrations screen."""
+    from . import windows_mcp
+    return {
+        "gemini_key": bool(os.getenv("GEMINI_API_KEY")) and os.getenv("GEMINI_API_KEY") != "paste_your_key_here",
+        "llm_router": bool(os.getenv("LLM_ROUTER_URL") and os.getenv("LLM_ROUTER_KEY")),
+        "whatsapp_session": (ROOT / "data" / "wa_profile").exists(),
+        "browser_agent": os.getenv("BROWSER_AGENT", "0") == "1",
+        "desktop_automation": windows_mcp.enabled(),
+        "wake_engine_enabled": wakeword.enabled(),
+        "wake_engine_running": bool(wakeword.status().get("running")),
+        "wake_engine_error": wakeword.status().get("error", ""),
+    }
+
+
 @app.get("/api/config")
 def config():
     return {
@@ -139,6 +168,8 @@ def config():
         "phone_url": f"http://{dashboard.lan_ip()}:8000" if os.getenv("ACCESS_PIN") else "",
         "tunnel_url": dashboard.tunnel_url(),
         "ui_url": os.getenv("UI_URL", "https://my-agent-roan-delta.vercel.app"),
+        "model": model_name(),
+        "integrations": integration_flags(),
     }
 
 
