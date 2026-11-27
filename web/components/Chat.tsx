@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Copy, Loader2, Mic, MicOff, Plus, RotateCcw, SendHorizonal, Sparkles, Wrench } from "lucide-react";
+import { AlertCircle, Check, Copy, Loader2, Mic, MicOff, Plus, RotateCcw, SendHorizonal, Sparkles, Square, Wrench } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { resultFailed, toolInfo } from "@/lib/tools";
 import { voice } from "@/lib/voice";
@@ -61,8 +61,10 @@ function Message({ m }: { m: Msg }) {
 }
 
 export default function Chat() {
-  const { msgs, busy, interim, sessions, sid, newChat, resetChat, settings, cfg, send, draft, set, toggleMic, ui, mode, pcOnline, online } = useStore();
+  const { msgs, busy, interim, sessions, sid, newChat, resetChat, settings, cfg, send, draft, set, toggleMic, ui, mode, pcOnline, online, voiceIssue, stopRequest } = useStore();
   const status = useStatus();
+  // On phones the composer already has a microphone: the voice strip shows only while it has something to say.
+  const voiceBusy = ui === "listening" || ui === "speaking" || !!voiceIssue;
   const box = useRef<HTMLDivElement>(null); const end = useRef<HTMLDivElement>(null); const ta = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true); const [text, setText] = useState(""); const [resetOpen, setResetOpen] = useState(false);
   const title = sessions.find((s) => s.id === sid)?.title || "New conversation";
@@ -80,8 +82,8 @@ export default function Chat() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-line bg-card px-3 py-2 sm:px-5">
-        <div className="min-w-0 flex-1"><h1 className="truncate text-sm font-semibold">{title}</h1><p className="truncate text-xs text-muted" data-testid="status-line">{status.label}</p></div>
+      <div className="flex items-center gap-2 border-b border-line bg-card px-3 py-2 sm:px-5 [@media(max-height:500px)]:py-0.5">
+        <div className="min-w-0 flex-1"><h1 className="truncate text-sm font-semibold">{title}</h1><p className="truncate text-xs text-muted [@media(max-height:500px)]:hidden" data-testid="status-line">{status.label}</p></div>
         <Button size="sm" icon={Plus} onClick={newChat}><span className="hidden sm:inline">New chat</span><span className="sr-only sm:hidden">New chat</span></Button>
         <Button size="sm" icon={RotateCcw} onClick={() => setResetOpen(true)} disabled={empty || busy}><span className="hidden sm:inline">Reset</span><span className="sr-only sm:hidden">Reset conversation</span></Button>
       </div>
@@ -109,17 +111,19 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="border-t border-line bg-bg px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-3 sm:px-6">
-        <div className="mx-auto max-w-3xl space-y-2.5">
-          {!empty && <VoicePanel variant="bar" />}
-          <div className="flex items-end gap-2 rounded-2xl border border-line bg-card p-2 shadow-card focus-within:border-primary">
-            <IconButton label={listening ? "Stop listening" : "Start voice input"} icon={listening ? MicOff : Mic} active={listening} aria-pressed={listening} onClick={() => void toggleMic()} disabled={!voice.canListen && !listening} />
+      <div className="border-t border-line bg-bg px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-3 sm:px-6 [@media(max-height:500px)]:pt-1.5">
+        <div className="mx-auto max-w-3xl space-y-2.5 [@media(max-height:500px)]:space-y-1">
+          {!empty && <div className={cn("[@media(max-height:500px)]:hidden", !voiceBusy && "hidden sm:block")}><VoicePanel variant="bar" /></div>}
+          <div className="flex items-end gap-2 rounded-2xl border border-control bg-card p-2 shadow-card outline-2 outline-offset-1 outline-primary focus-within:border-primary focus-within:outline [@media(max-height:500px)]:p-1">
+            <IconButton label={listening ? "Stop listening" : "Start voice input"} icon={listening ? MicOff : Mic} active={listening} onClick={() => void toggleMic()} disabled={!voice.canListen && !listening} />
             <textarea ref={ta} rows={1} value={text} maxLength={4000} onChange={(e) => setText(e.target.value)} aria-label="Message to the assistant" placeholder={listening ? "Listening…" : "Ask anything or give a command…"}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
               className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-1 py-3 text-[15px] outline-none placeholder:text-muted" />
-            <Button variant="primary" onClick={submit} disabled={!text.trim() || busy} loading={busy} aria-label="Send message" className="w-11 px-0">{busy ? null : <SendHorizonal size={18} aria-hidden />}</Button>
+            {busy
+              ? <Button variant="danger" onClick={() => void stopRequest()} aria-label="Stop request" title="Stop request" className="w-11 px-0"><Square size={16} aria-hidden /></Button>
+              : <Button variant="primary" onClick={submit} disabled={!text.trim()} aria-label="Send message" className="w-11 px-0"><SendHorizonal size={18} aria-hidden /></Button>}
           </div>
-          <p className="px-1 text-xs text-muted">Enter to send · Shift+Enter for a new line{text.length > 3500 ? ` · ${4000 - text.length} characters left` : ""}</p>
+          <p className="px-1 text-xs text-muted [@media(max-height:500px)]:hidden">Enter to send · Shift+Enter for a new line{text.length > 3500 ? ` · ${4000 - text.length} characters left` : ""}</p>
         </div>
       </div>
 

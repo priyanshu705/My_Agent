@@ -1,6 +1,6 @@
 "use client";
 import clsx from "clsx";
-import { useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 import { Loader2, type LucideIcon } from "lucide-react";
 
 export const cn = clsx;
@@ -18,7 +18,7 @@ export function Button({ variant = "secondary", size = "md", loading, icon: Icon
   return (
     <button type="button" {...p} disabled={p.disabled || loading}
       className={cn("inline-flex select-none items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        size === "sm" ? "min-h-[40px] [@media(pointer:coarse)]:min-h-[44px] px-3 text-sm" : size === "lg" ? "min-h-[48px] px-5 text-base" : "min-h-[44px] px-4 text-sm", VARIANT[variant], className)}>
+        size === "sm" ? "relative min-h-[40px] after:absolute after:inset-x-0 after:-inset-y-0.5 [@media(pointer:coarse)]:min-h-[44px] px-3 text-sm": size === "lg" ? "min-h-[48px] px-5 text-base" : "min-h-[44px] px-4 text-sm", VARIANT[variant], className)}>
       {loading ? <Loader2 size={16} className="animate-spin" aria-hidden /> : Icon ? <Icon size={16} aria-hidden /> : null}{children}
     </button>
   );
@@ -73,13 +73,13 @@ export function Badge({ tone = "neutral", children, dot = true, className }: { t
 export function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}
-      className={cn("relative h-8 w-14 shrink-0 rounded-full transition-colors disabled:opacity-50", on ? "bg-primary" : "bg-muted/50")}>
-      <i aria-hidden className={cn("absolute top-0.5 h-7 w-7 rounded-full bg-white shadow transition-all", on ? "left-[26px]" : "left-0.5")} />
+      className={cn("relative h-8 w-14 shrink-0 rounded-full transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 disabled:opacity-50", on ? "bg-primary" : "bg-control")}>
+      <i aria-hidden className={cn("absolute left-0.5 top-0.5 h-7 w-7 rounded-full bg-white shadow transition-transform", on && "translate-x-6")} />
     </button>
   );
 }
 export function Input({ className, ...p }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...p} className={cn("min-h-[44px] w-full rounded-lg border border-line bg-card px-3 text-sm text-ink outline-none transition-colors placeholder:text-muted focus:border-primary", className)} />;
+  return <input {...p} className={cn("min-h-[44px] w-full rounded-lg border border-control bg-card px-3 text-sm text-ink transition-colors placeholder:text-muted focus:border-primary", className)} />;
 }
 export function Field({ label, hint, children, htmlFor }: { label: string; hint?: string; children: ReactNode; htmlFor?: string }) {
   return (
@@ -94,6 +94,10 @@ export function Field({ label, hint, children, htmlFor }: { label: string; hint?
 const FOCUSABLE = 'a[href],button:not([disabled]),textarea,input:not([disabled]),select,[tabindex]:not([tabindex="-1"])';
 export function useFocusTrap(active: boolean, onEscape?: () => void) {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers pass a new onEscape on every render. Keeping it in a ref stops the trap from re-running, which would
+  // throw focus back to the first control while the user is typing or tabbing.
+  const escape = useRef(onEscape);
+  useEffect(() => { escape.current = onEscape; });
   useEffect(() => {
     if (!active) return;
     const prev = document.activeElement as HTMLElement | null;
@@ -101,7 +105,7 @@ export function useFocusTrap(active: boolean, onEscape?: () => void) {
     const items = () => Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((e) => e.offsetParent !== null);
     const first = root.querySelector<HTMLElement>("[data-autofocus]") || items()[0]; first?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && onEscape) { e.stopPropagation(); onEscape(); return; }
+      if (e.key === "Escape" && escape.current) { e.stopPropagation(); escape.current(); return; }
       if (e.key !== "Tab") return;
       const els = items(); if (!els.length) return;
       const a = els[0], z = els[els.length - 1];
@@ -110,8 +114,15 @@ export function useFocusTrap(active: boolean, onEscape?: () => void) {
     };
     root.addEventListener("keydown", onKey);
     return () => { root.removeEventListener("keydown", onKey); prev?.focus?.(); };
-  }, [active, onEscape]);
+  }, [active]);
   return ref;
+}
+
+/** True while the CSS media query matches. `initial` is used for the first render (static export has no window). */
+export function useMedia(query: string, initial = false) {
+  const [match, setMatch] = useState(initial);
+  useEffect(() => { const q = matchMedia(query); const f = () => setMatch(q.matches); f(); q.addEventListener("change", f); return () => q.removeEventListener("change", f); }, [query]);
+  return match;
 }
 
 export function Dialog({ open, onClose, title, description, children, role = "dialog", tone = "info", wide }: {
@@ -130,6 +141,11 @@ export function Dialog({ open, onClose, title, description, children, role = "di
       </div>
     </div>
   );
+}
+
+/** Shown when an action cannot reach the backend, on every screen and at every width. */
+export function OfflineBanner() {
+  return <div role="alert" className="border-b border-danger/40 bg-danger-soft px-4 py-2 text-sm text-danger-text">Backend offline. Changes are not saved until it is reachable again.</div>;
 }
 
 export function Spinner({ label = "Working" }: { label?: string }) { return <Loader2 size={16} className="animate-spin text-primary-text" role="img" aria-label={label} />; }

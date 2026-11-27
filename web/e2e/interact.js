@@ -15,7 +15,7 @@ const send = async (p, text) => { const ta = p.getByLabel("Message to the assist
     check("greeting uses the configured user name", await p.getByRole("heading", { level: 1 }).first().innerText().then((t) => /Om/.test(t)));
     check("overview shows model name from /api/config", await p.getByText("Model: gemini-3.5-flash-lite").isVisible());
     check("overview shows Voice 'Available'", await p.getByText("Available", { exact: true }).first().isVisible());
-    check("integrations tile counts only real flags", await p.getByText(/\d of 7 on/).isVisible());
+    check("integrations tile counts only real flags", await p.getByText(/\d of 9 on/).isVisible());
 
     // quick actions
     await p.getByRole("button", { name: "Create a note" }).click();
@@ -61,8 +61,10 @@ const send = async (p, text) => { const ta = p.getByLabel("Message to the assist
     await p.getByRole("button", { name: /Plan tomorrow/ }).first().click(); await p.waitForTimeout(600);
     check("opening a stored conversation loads its history", await p.getByText(/design review at 15:30/).isVisible());
     check("a failed tool in history is flagged", await p.getByLabel("Tools used").getByText("whatsapp send file").first().isVisible());
-    await p.getByRole("button", { name: /Delete conversation Reminders/ }).click(); await p.waitForTimeout(400);
-    check("deleting a conversation calls DELETE /api/sessions/{id}", calls(st, "/api/sessions/s2", "DELETE").length === 1);
+    await p.getByRole("button", { name: /Delete conversation Reminders/ }).click(); await p.waitForTimeout(300);
+    check("deleting a conversation asks first and focuses the safe option", calls(st, "/api/sessions/s2", "DELETE").length === 0 && (await p.evaluate(() => document.activeElement.textContent)) === "Keep it");
+    await p.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click(); await p.waitForTimeout(400);
+    check("confirming calls DELETE /api/sessions/{id}", calls(st, "/api/sessions/s2", "DELETE").length === 1);
     check("no page errors in chat", p.errors.length === 0, p.errors.join(" | "));
     await ctx.close(); }
 
@@ -76,7 +78,7 @@ const send = async (p, text) => { const ta = p.getByLabel("Message to the assist
     check("focus starts on Cancel (the safe choice)", (await p.evaluate(() => document.activeElement.textContent)) === "Cancel");
     await p.keyboard.press("Tab"); await p.keyboard.press("Tab"); await p.keyboard.press("Tab");
     check("keyboard focus stays trapped inside the dialog", await p.evaluate(() => !!document.activeElement.closest('[role="alertdialog"]')));
-    check("the chat bubble has no second set of approve buttons", (await p.getByRole("button", { name: "Confirm", exact: true }).count()) === 1);
+    check("the chat bubble has no second set of approve buttons", (await p.getByRole("button", { name: "Close app", exact: true }).count()) === 1);
     await p.keyboard.press("Escape"); await p.waitForTimeout(600);
     const c1 = calls(st, "/api/confirm");
     check("Escape cancels: POST /api/confirm approved=false with the server-issued id", c1.length === 1 && c1[0].b.approved === false && /^cid-/.test(c1[0].b.confirm_id));
@@ -235,6 +237,64 @@ const send = async (p, text) => { const ta = p.getByLabel("Message to the assist
   { const { ctx, p } = await open(b, { wait: 0 });
     await p.route("**/api/ping", (r) => r.abort()); await p.reload(); await p.waitForTimeout(1500);
     check("an unreachable backend shows Offline, not Ready", await p.getByText("Backend offline").first().isVisible() || await p.getByText("Offline", { exact: true }).first().isVisible()); await ctx.close(); }
+
+  // ---------------------------------------------------------------- regressions from the design review
+  R.section("Design review regressions");
+  { const { ctx, p, st } = await open(b, { sr: "ok" });
+    await p.getByRole("button", { name: "Create a reminder" }).click(); await p.keyboard.type("Stretch");
+    const mins = p.getByLabel("Minutes from now"); await mins.fill(""); await mins.pressSequentially("45", { delay: 60 });
+    check("typing minutes keeps focus in the minutes field", (await p.evaluate(() => document.activeElement.id)) === "qa-mins" && (await p.locator("#qa-text").inputValue()) === "Stretch" && (await mins.inputValue()) === "45");
+    await mins.fill("");
+    check("an empty minutes value cannot be saved", await p.getByRole("button", { name: "Save" }).isDisabled());
+    await p.getByRole("button", { name: "At a time" }).click();
+    const at = await p.evaluate(() => { const d = new Date(Date.now() + 7200000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); });
+    await p.getByLabel("Date and time").fill(at); await p.getByRole("button", { name: "Save" }).click(); await p.waitForTimeout(400);
+    check("a reminder at a date and time is sent as minutes", calls(st, "/api/reminders", "POST").some((c) => c.b.minutes >= 118 && c.b.minutes <= 121));
+    await gotoView(p, "chat"); await send(p, "send email to rahul"); await p.waitForTimeout(500);
+    check("a typed command does not open the microphone", !(await p.evaluate(() => window.__srStarts)));
+    await p.getByRole("alertdialog").getByRole("button", { name: "Confirm", exact: true }).focus();
+    await p.waitForTimeout(21000); // one background refresh
+    check("a background refresh does not move focus in the approval dialog", (await p.evaluate(() => document.activeElement.textContent)) === "Confirm");
+    await p.reload(); await p.waitForTimeout(1500);
+    check("a pending approval comes back after a reload", await p.getByRole("alertdialog").isVisible());
+    st.fail = ["/api/confirm"];
+    await p.getByRole("alertdialog").getByRole("button", { name: "Confirm", exact: true }).click(); await p.waitForTimeout(600);
+    check("a failed answer keeps the dialog and explains", await p.getByRole("alertdialog").getByRole("alert").filter({ hasText: "may not have reached" }).isVisible());
+    await p.getByRole("button", { name: "Close for now" }).click(); await p.waitForTimeout(300);
+    check("the failed dialog can be closed", (await p.getByRole("alertdialog").count()) === 0);
+    check("no page errors in review regressions", p.errors.filter((e) => !/500/.test(e)).length === 0, p.errors.join(" | "));
+    await ctx.close(); }
+  { const { ctx, p } = await open(b, { mock: { delayChat: 4000 } });
+    await gotoView(p, "chat"); await send(p, "search google slowly"); await p.waitForTimeout(500);
+    await p.getByRole("button", { name: "Stop request" }).click(); await p.waitForTimeout(500);
+    check("Stop ends the wait and says what happens next", await p.getByText(/Stopped\. No further steps will start/).isVisible() && (await p.getByTestId("working").count()) === 0);
+    await p.waitForTimeout(4000);
+    check("the late answer of a stopped request is ignored", (await p.getByText("I opened Google with your search.").count()) === 0);
+    await ctx.close(); }
+  { const { ctx, p } = await open(b, { mock: { fail: ["/api/todos", "/api/sessions/"] } });
+    await gotoView(p, "tasks"); await p.getByRole("checkbox", { name: /Mark complete: Review/ }).click(); await p.waitForTimeout(500);
+    check("a failed task update is reported", await p.getByText("Could not update the task").isVisible());
+    await p.getByRole("button", { name: "Dismiss message" }).first().click();
+    check("a message can be dismissed", (await p.getByText("Could not update the task").count()) === 0);
+    await p.getByRole("button", { name: /Delete conversation Reminders/ }).click(); await p.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click(); await p.waitForTimeout(500);
+    check("a failed delete is reported", await p.getByText("Could not delete that conversation").isVisible());
+    await ctx.close(); }
+  { const { ctx, p } = await open(b, { viewport: { width: 390, height: 844 } });
+    await gotoView(p, "chat"); await p.getByRole("button", { name: /Open menu/ }).click(); await p.getByRole("button", { name: /Plan tomorrow/ }).first().click(); await p.waitForTimeout(600);
+    check("phone chat shows one microphone button", (await p.locator('button:visible[aria-label="Start voice input"], button:visible[aria-label="Start listening"]').count()) === 1);
+    await gotoView(p, "overview");
+    check("phone overview with long results does not scroll sideways", await p.evaluate(() => { const m = document.querySelector("main"); return m.scrollWidth <= m.clientWidth + 1; }));
+    check("quick action labels are not cut off", await p.evaluate(() => [...document.querySelectorAll("main li button span.block")].every((e) => e.scrollWidth <= e.clientWidth + 1)));
+    await p.setViewportSize({ width: 844, height: 390 }); await p.getByRole("button", { name: /Open menu/ }).click(); await p.getByRole("button", { name: /Plan tomorrow/ }).first().click(); await p.waitForTimeout(600);
+    const h = await p.getByTestId("chat-log").evaluate((e) => e.clientHeight);
+    check("landscape phone keeps a readable conversation area", h >= 150, h + "px");
+    await p.route("**/api/ping", (r) => r.abort()); await p.waitForTimeout(21500);
+    check("offline is visible on a phone", await p.getByRole("alert").filter({ hasText: "Backend offline" }).isVisible());
+    await ctx.close(); }
+  { const { ctx, p } = await open(b, { reducedMotion: true, mock: { delayChat: 3000 } });
+    await gotoView(p, "chat"); await send(p, "search google still"); await gotoView(p, "automation"); await p.waitForTimeout(800);
+    check("reduced motion: the data-flow lines do not animate", (await p.locator("svg animate").count()) === 0);
+    await ctx.close(); }
 
   // ---------------------------------------------------------------- mobile navigation
   R.section("Mobile navigation");

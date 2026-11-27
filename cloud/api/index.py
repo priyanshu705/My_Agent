@@ -12,6 +12,7 @@ Env vars (Vercel -> Settings -> Environment Variables):
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
 import re
@@ -276,7 +277,13 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
         msg = "Google is connected. You can close this tab and return to the app."
     except Exception as e:
         msg = f"Google could not be connected: {e}"
-    return HTMLResponse(f"<meta name=viewport content='width=device-width'><body style='font-family:sans-serif;background:#050912;color:#e8f4ff;padding:32px'><h3>{msg}</h3><a style='color:#19d3ff' href='/'>App kholo</a>")
+    # Same few colours as app/pages.py and web/app/globals.css (cloud/ is deployed on its own).
+    return HTMLResponse(
+        "<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>My Agent: Google</title><style>:root{color-scheme:light dark;--bg:#F7F8FC;--ink:#1F2937;--link:#5856D6}"
+        "@media (prefers-color-scheme:dark){:root{--bg:#0B1020;--ink:#E5E7EB;--link:#8B89F0}}"
+        "body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:32px}a{color:var(--link)}</style>"
+        f"<body><h1 style='font-size:20px'>{html.escape(msg)}</h1><a href='/'>Open the app</a>")
 
 
 def google_token() -> str:
@@ -609,7 +616,8 @@ def pc_response(sid: str, r: dict) -> dict:
     out = {"reply": r.get("reply") or "Done.", "actions": r.get("actions") or [], "job_id": r["job_id"]}
     if r.get("confirm"):
         out["confirm"] = r["confirm"]
-        kv_set(f"pcpend:{sid}", {"job": r["job_id"], "at": time.time(), "cid": str((r["confirm"] or {}).get("id", ""))})
+        kv_set(f"pcpend:{sid}", {"job": r["job_id"], "at": time.time(), "cid": str((r["confirm"] or {}).get("id", "")),
+                                 "ask": {"reply": out["reply"], "confirm": r["confirm"]}})
     else:
         kv_set(f"pcpend:{sid}", {})
     return out
@@ -1134,6 +1142,7 @@ def tts(body: TtsIn):
 @app.post("/api/reset")
 def reset(body: ResetIn):
     sb("DELETE", "agent_messages", {"session_id": f"eq.{body.session_id}"}, prefer="return=minimal")
+    kv_set(f"pcpend:{body.session_id}", {})
     return {"ok": True}
 
 
@@ -1147,8 +1156,10 @@ def sessions():
 def session_messages(sid: str):
     check_sid(sid)
     rows = sb("GET", "agent_messages", {"session_id": f"eq.{sid}", "select": "role,content,actions,created_at", "order": "id.asc", "limit": "200"})
+    pend = kv_get(f"pcpend:{sid}") or {}
+    waiting = pend.get("ask") if pend.get("cid") and time.time() - float(pend.get("at", 0)) <= 1800 else None
     return {"id": sid, "messages": [{"role": r["role"], "text": r["content"], "at": fmt_local(r["created_at"]),
-                                      "actions": r["actions"]} for r in rows]}
+                                      "actions": r["actions"]} for r in rows], "pending": waiting}
 
 
 @app.delete("/api/sessions/{sid}")

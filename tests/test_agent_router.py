@@ -43,8 +43,8 @@ REQS.clear(); calls.clear()
 SCRIPT[:] = [{"calls": [tc("c1", "close_app", {"app_name": "chrome"})]}, {"text": "Chrome is closed."}]
 r = ag.chat("s2", "close chrome")
 check("confirm: card shown, tool NOT run yet", "confirm" in r and calls == [], str(r.get("confirm")))
-r = ag.chat("s2", "yes")
-check("confirm: runs after yes", calls == [("close_app", "chrome")] and r["reply"] == "Chrome is closed.", r["reply"])
+r = ag.chat("s2", "confirm")
+check("confirm: runs after confirm",calls == [("close_app", "chrome")] and r["reply"] == "Chrome is closed.", r["reply"])
 
 # 3: router 503 -> falls back to Gemini models (first one retired 404, second works)
 REQS.clear(); SCRIPT[:] = [503]

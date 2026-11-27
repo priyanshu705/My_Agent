@@ -149,6 +149,8 @@ class VoiceEngine {
     this.lastStatus = status; return status;
   }
   resetFailure() { this.downUntil = 0; }
+  /** After the voice engine or key changes: drop audio made with the old one and try the new one at once. */
+  reset() { this.stop(); this.cache.clear(); this.cacheBytes = 0; this.downUntil = 0; }
 
   // ---- recognition ----
   async listen(o: { lang: string; onInterim: (t: string) => void; onEnd: (finalText: string, err: string) => void }): Promise<boolean> {

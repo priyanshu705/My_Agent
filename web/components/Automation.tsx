@@ -7,7 +7,7 @@ import { buildLog } from "@/lib/activity";
 import { CATEGORY_LABEL, RISK_LABEL, describeArgs, toolInfo, type Category } from "@/lib/tools";
 import type { ActionLog } from "@/lib/types";
 import { useStatus } from "./Shell";
-import { Badge, Button, Card, EmptyState, PageHeader, SectionTitle, cn } from "./ui";
+import { Badge, Button, Card, EmptyState, PageHeader, SectionTitle, cn, useMedia } from "./ui";
 
 const CATS = Object.keys(CATEGORY_LABEL) as Category[];
 
@@ -67,6 +67,7 @@ const nodeFor = (t?: string) => { const c = toolInfo(t || "").category; return c
 
 function FlowGraph() {
   const a = useStore((s) => s.activity); const pcOnline = useStore((s) => s.pcOnline); const busy = useStore((s) => s.busy); const live = busy || !a.done;
+  const still = useMedia("(prefers-reduced-motion: reduce)"); // CSS cannot stop an SVG <animate>
   const active = new Set<string>();
   if (live) { active.add("you"); if (["think", "tool", "pc", "pc_tool", "understand"].includes(a.phase)) active.add("brain"); if (a.phase === "tool" || a.phase === "pc_tool") active.add(nodeFor(a.tool)); if (a.phase === "pc" || a.phase === "pc_tool") active.add("pc"); }
   if (a.done && a.phase === "done") { active.add("brain"); active.add("ans"); }
@@ -75,13 +76,13 @@ function FlowGraph() {
       <SectionTitle right={<Badge tone={live ? "info" : "neutral"}>{live ? "Working" : "Idle"}</Badge>}>Data flow</SectionTitle>
       <svg viewBox="0 0 420 345" className="w-full" role="img" aria-label={`Data flow diagram. ${live ? "The assistant is working." : "Idle."}`}>
         {EDGES.map(([f, t]) => { const A = N_BY[f], B = N_BY[t]; const on = active.has(f) && active.has(t); const d = `M${A.x} ${A.y} C ${A.x} ${(A.y + B.y) / 2}, ${B.x} ${(A.y + B.y) / 2}, ${B.x} ${B.y}`;
-          return <path key={f + t} d={d} fill="none" stroke={on ? "rgb(var(--primary))" : "rgb(var(--border))"} strokeWidth={on ? 2 : 1.5} strokeDasharray={on ? "5 5" : "3 5"}>{on && <animate attributeName="stroke-dashoffset" from="20" to="0" dur=".8s" repeatCount="indefinite" />}</path>; })}
+          return <path key={f + t} d={d} fill="none" stroke={on ? "rgb(var(--primary))" : "rgb(var(--border))"} strokeWidth={on ? 2 : 1.5} strokeDasharray={on ? "5 5" : "3 5"}>{on && !still && <animate attributeName="stroke-dashoffset" from="20" to="0" dur=".8s" repeatCount="indefinite" />}</path>; })}
         {NODES.map((n) => { const on = active.has(n.id); const off = n.id === "pc" && !pcOnline; return (
           <g key={n.id} transform={`translate(${n.x},${n.y})`} opacity={off ? 0.5 : 1}>
             <circle r="23" fill={on ? "rgb(var(--primary-soft))" : "rgb(var(--card))"} stroke={on ? "rgb(var(--primary))" : "rgb(var(--border))"} strokeWidth={on ? 2 : 1.5} />
             <foreignObject x="-11" y="-11" width="22" height="22"><div className={cn("grid h-[22px] w-[22px] place-items-center", on ? "text-primary-text" : "text-muted")}><n.Icon size={15} aria-hidden /></div></foreignObject>
-            <text y="40" textAnchor="middle" fontSize="11" fontWeight="600" fill="rgb(var(--text))">{n.label}</text>
-            <text y="52" textAnchor="middle" fontSize="9" fill="rgb(var(--muted))">{n.id === "pc" ? (pcOnline ? "online" : "offline") : n.sub}</text>
+            <text y="40" textAnchor="middle" fontSize="13" fontWeight="600" fill="rgb(var(--text))">{n.label}</text>
+            <text y="54" textAnchor="middle" fontSize="11" fill="rgb(var(--muted))">{n.id === "pc" ? (pcOnline ? "online" : "offline") : n.sub}</text>
           </g>); })}
       </svg>
     </Card>

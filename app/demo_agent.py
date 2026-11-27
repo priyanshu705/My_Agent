@@ -9,7 +9,8 @@ import re
 
 from datetime import datetime, timedelta
 
-from .agent import NEEDS_CONFIRMATION, TOOL_MAP, describe, yes_no
+from .agent import NEEDS_CONFIRMATION, TOOL_MAP, describe
+from .approval import ask_text, yes_no
 from .web_tools import SITES
 
 OPEN = r"(khol|kholo|open|start|chalu|launch)"
@@ -114,16 +115,19 @@ class DemoAgent:
             ans = yes_no(text)
             if ans is not None:
                 return self.confirm(session_id, ans, self.pending[session_id][0])
-            self.pending.pop(session_id)
+            return self._ask(*self.pending[session_id])  # not a clear answer: keep waiting
         name, args = parse(text)
         if name is None:
             return {"reply": args, "actions": []}
         if name in NEEDS_CONFIRMATION:
             cid = secrets.token_urlsafe(16)
             self.pending[session_id] = (cid, name, args)
-            return {"reply": f"Confirm karo: {describe(name, args)}. Haan ya na?",
-                    "confirm": {"id": cid, "tool": name, "args": args}, "actions": []}
+            return self._ask(cid, name, args)
         return self._run(name, args)
+
+    def _ask(self, cid, name, args):
+        return {"reply": ask_text(describe(name, args)),
+                "confirm": {"id": cid, "tool": name, "args": args}, "actions": []}
 
     def confirm(self, session_id: str, approved: bool, confirm_id: str = "") -> dict:
         p = self.pending.get(session_id)
@@ -133,6 +137,13 @@ class DemoAgent:
             return {"reply": "That confirmation is no longer valid. Please ask again.", "actions": [], "error": True}
         self.pending.pop(session_id, None)
         return self._run(p[1], p[2]) if approved else {"reply": "Theek hai, cancel kar diya.", "actions": []}
+
+    def pending_ask(self, session_id: str):
+        p = self.pending.get(session_id)
+        if not p:
+            return None
+        ask = self._ask(*p)
+        return {"reply": ask["reply"], "confirm": ask["confirm"]}
 
     def reset(self, session_id: str) -> None:
         self.pending.pop(session_id, None)

@@ -13,12 +13,13 @@ Tailwind colours in `web/tailwind.config.ts`. Components never use raw hex value
 | `bg` | `#F7F8FC` | `#0B1020` | page background |
 | `card` | `#FFFFFF` | `#141B2D` | cards, dialogs, inputs |
 | `border` (`line`) | `#E8EAF0` | `#26304A` | hairlines, dividers |
+| `control` | `#848DA0` | `#697490` | borders and tracks that identify a control: inputs, switch off, checkbox (3:1 or more) |
 | `text` (`ink`) | `#1F2937` | `#E5E7EB` | body and headings |
 | `muted` | `#5C6B82` | `#9AA6BC` | secondary text (AA-safe variant of brand `#64748B`) |
 | `sidebar` | `#111827` | `#080C18` | navigation rail |
 | `sidebar-2` | `#232C42` | `#1E273E` | active / hover nav item |
 | `primary` | `#5856D6` | `#5856D6` | buttons, active states, orb |
-| `primary-hover` | `#4B49C8` | `#6A68E4` | button hover |
+| `primary-hover` | `#4B49C8` | `#6462E0` | button hover (white text stays above 4.5:1) |
 | `primary-soft` | `#EEEEFC` | `#21224A` | tinted surfaces, icon tiles |
 | `primary-text` | `#5856D6` | `#8B89F0` | links and accent text |
 | `success` / `-text` / `-soft` | `#16A36A` / `#0B7A4B` / `#E7F6EF` | `#34D399` / `#34D399` / `#10342A` | fill+dot / text / chip bg |
@@ -82,14 +83,15 @@ Status is never conveyed by colour alone: every badge carries a text label, and 
 ## 4. Components (`web/components/ui.tsx`)
 | Component | Variants / notes |
 |---|---|
-| `Button` | `primary`, `secondary`, `ghost`, `danger`; sizes `sm` (40 px, 44 px on touch), `md` 44, `lg` 48; `loading`, `icon` |
+| `Button` | `primary`, `secondary`, `ghost`, `danger`; sizes `sm` (40 px with a 44 px hit area), `md` 44, `lg` 48; `loading`, `icon` |
 | `IconButton` | 44 px square, required `label` (becomes `aria-label` + tooltip) |
 | `Card`, `PageHeader`, `SectionTitle`, `EmptyState` | surfaces and page scaffolding |
 | `Badge` | tones `success`, `warning`, `danger`, `info`, `neutral`; dot + text |
-| `Switch` | `role="switch"`, 56×32 px |
-| `Input`, `Field` | 44 px high; `Field` pairs label, hint and control (stacks on mobile) |
+| `Switch` | `role="switch"`, 56×32 px with a 44 px hit area; the knob moves with `transform` |
+| `Input`, `Field` | 44 px high, `control` border, standard focus outline; `Field` pairs label, hint and control (stacks on mobile) |
 | `Dialog` | modal with focus trap, Esc, focus restore; `role="alertdialog"` for confirmations; bottom sheet on mobile |
-| `useFocusTrap` | reusable trap used by Dialog and the mobile drawer |
+| `useFocusTrap` | reusable trap used by Dialog and the mobile drawer; re-renders never move focus |
+| `useMedia`, `OfflineBanner` | media-query state; the "Backend offline" strip shown at every width |
 
 Feature components: `Sidebar`, `Shell`, `Overview`, `Chat` (+ `Message`, composer), `Voice` (`VoicePanel`, `Wave`), `Orb`,
 `Confirm` (`ConfirmDialog`, `ConfirmDetails`), `Automation` (`ExecutionCard`, `Timeline`, `FlowGraph`), `Productivity`
@@ -123,8 +125,16 @@ A tool result is shown as **Completed** only when the backend returned without a
 
 ## 7. Motion
 - Entrances 220 ms ease-out (`rise`); no decorative loops except the orb, spinners and the working indicator.
-- The orb pauses when the tab is hidden. With `prefers-reduced-motion` the orb is drawn once per state change and all CSS
-  animation/transition durations collapse to ~0.
+- The orb pauses when the tab is hidden and holds still after 4.5 s in a resting state (idle, wake word, error). With
+  `prefers-reduced-motion` it is drawn once per state change, CSS animation/transition durations collapse to ~0,
+  `framer-motion` follows the setting (`MotionConfig`) and the data-flow lines do not animate.
+
+## 7a. Approval rules
+- Only a button press, or a whole phrase containing "confirm", approves. Any "no" or "wait" word cancels. Anything else
+  leaves the action waiting (`app/approval.py`, mirrored in `web/lib/approval.ts`).
+- The microphone never opens by itself after a typed command.
+- A waiting action is returned with its conversation, so a reload shows it again.
+- Destructive actions (delete event, lock screen, close app) use the `danger` button and name the action.
 
 ## 8. Theme mechanics
 - `html[data-theme="light" | "dark"]`; the preference (`light` default, `dark`, `system`) is saved in `localStorage.settings.theme`.

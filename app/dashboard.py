@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from . import memory_tools as mem
+from .pages import LOGIN_HTML
 
 from .util import atomic_write
 
@@ -90,11 +91,15 @@ def _check_sid(sid: str) -> str:
     return sid
 
 
+pending_provider = None  # set by main.py: session id -> the question still waiting for confirm/cancel, or None
+
+
 @router.get("/api/sessions/{sid}")
 def session_messages(sid: str):
     _check_sid(sid)
     s = _load()["sessions"].get(sid)
-    return {"id": sid, "messages": s["messages"] if s else []}
+    return {"id": sid, "messages": s["messages"] if s else [],
+            "pending": pending_provider(sid) if pending_provider else None}
 
 
 @router.delete("/api/sessions/{sid}")
@@ -447,32 +452,6 @@ def logout(request: Request):
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("agent_auth")
     return resp
-
-
-LOGIN_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Agent login</title>
-<style>
-body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#050912;color:#e6f1ff;
-font:16px system-ui,sans-serif}
-form{width:min(320px,86vw);padding:28px;border-radius:20px;background:#0b1224;border:1px solid #1d2c52;
-box-shadow:0 0 40px #19d3ff22;text-align:center}
-h1{font-size:20px;margin:0 0 6px}p{color:#7f93b8;font-size:13px;margin:0 0 18px}
-input{width:100%;box-sizing:border-box;padding:14px;border-radius:12px;border:1px solid #24376a;background:#050912;
-color:#fff;font-size:20px;text-align:center;letter-spacing:6px}
-button{margin-top:14px;width:100%;padding:13px;border:0;border-radius:12px;font-weight:600;font-size:15px;
-background:linear-gradient(135deg,#19d3ff,#7a5cff);color:#04101f}
-#err{color:#ff6b7a;font-size:13px;min-height:18px;margin-top:10px}
-</style></head><body>
-<form id="f"><h1>Agent</h1><p>PIN daalo (PC wale .env mein ACCESS_PIN)</p>
-<input id="pin" type="password" autocomplete="off" autofocus>
-<button>Andar jao</button><div id="err"></div></form>
-<script>
-document.getElementById("f").onsubmit=async e=>{e.preventDefault();
-const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
-body:JSON.stringify({pin:document.getElementById("pin").value})});
-if(r.ok)location.href="/";else{const d=await r.json().catch(()=>({}));
-document.getElementById("err").textContent=d.detail||"Error";}};
-</script></body></html>"""
 
 
 @router.get("/login")

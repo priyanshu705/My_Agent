@@ -5,8 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="0; url=https://my-agent-ui-three.vercel.app">
 <title>My_Agent has moved</title>
+<!-- Same few colours as app/pages.py and web/app/globals.css (cloud/ is deployed on its own). -->
+<style>
+:root{color-scheme:light dark;--bg:#F7F8FC;--ink:#1F2937;--link:#5856D6}
+@media (prefers-color-scheme:dark){:root{--bg:#0B1020;--ink:#E5E7EB;--link:#8B89F0}}
+body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:32px}
+a{color:var(--link)}
+</style>
 </head>
-<body style="font-family:system-ui,sans-serif;background:#050912;color:#e6f1ff;padding:32px">
-<p>The My_Agent web app has moved. <a style="color:#19d3ff" href="https://my-agent-ui-three.vercel.app">Open it here</a>.</p>
+<body>
+<p>The My_Agent web app has moved. <a href="https://my-agent-ui-three.vercel.app">Open it here</a>.</p>
 </body>
 </html>

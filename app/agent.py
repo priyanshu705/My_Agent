@@ -19,6 +19,7 @@ from .browser_tools import BROWSER_NEEDS_CONFIRMATION, BROWSER_TOOLS, confirm_co
 from .browser_agent import BROWSER_AGENT_TOOLS, enabled as browser_agent_enabled
 from .windows_mcp import WINDOWS_MCP_NEEDS_CONFIRMATION, WINDOWS_MCP_TOOLS, confirm_context as wm_context
 from . import llm_router
+from .approval import ask_text, yes_no
 from .contacts_tools import CONTACT_TOOLS
 from .web_tools import WEB_TOOLS
 from .whatsapp_tools import WHATSAPP_NEEDS_CONFIRMATION, WHATSAPP_TOOLS
@@ -26,11 +27,11 @@ from .whatsapp_tools import WHATSAPP_NEEDS_CONFIRMATION, WHATSAPP_TOOLS
 ALL_TOOLS = PC_TOOLS + WEB_TOOLS + BROWSER_TOOLS + BROWSER_AGENT_TOOLS + WINDOWS_MCP_TOOLS + MEMORY_TOOLS + GOOGLE_TOOLS + CONTACT_TOOLS + WHATSAPP_TOOLS
 NEEDS_CONFIRMATION = PC_NEEDS_CONFIRMATION | GOOGLE_NEEDS_CONFIRMATION | WHATSAPP_NEEDS_CONFIRMATION | BROWSER_NEEDS_CONFIRMATION | WINDOWS_MCP_NEEDS_CONFIRMATION
 TOOL_MAP = {f.__name__: f for f in ALL_TOOLS}
-MAX_STEPS = 8
+MAX_STEPS = 16  # web forms need more than a handful of tool calls
 # Google retires models without much notice (gemini-2.5-flash already 404s), so never rely on a single name.
 GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"]
 MAX_HISTORY = 40
-CHAT_DEADLINE = float(os.getenv("CHAT_DEADLINE", "90"))  # seconds for one whole chat turn
+CHAT_DEADLINE = float(os.getenv("CHAT_DEADLINE", "120"))  # seconds for one whole chat turn
 log = logging.getLogger("agent")
 
 AGENT_NAME = os.getenv("AGENT_NAME", "Agent")
@@ -63,6 +64,9 @@ Shopping, bookings and job applications (browser tools):
   Amazon, Flipkart, Blinkit, Zepto, Swiggy, Zomato, IRCTC, MakeMyTrip, redBus, BookMyShow, LinkedIn, Naukri and Indeed.
 - Typical flow: open the site, search, compare options (price, rating, delivery), pick the best match for the request, add to cart or fill the form,
   and go as far as the final step. Tell the user what you chose and why in one or two sentences.
+- For Indian trains and seat availability call train_search (station codes, date DD-MM-YYYY, class such as 3A). List the trains
+  with seats and say that the data is from a third-party site. For train questions this overrides the 1-3 sentence limit.
+- If a file or folder tool says a folder is not allowed, tell the user to add it under Integrations, "Folders the agent can see".
 - If browser_task is available, use it for multi-step research on these sites (compare prices across sites, find trains/buses/flights, shortlist jobs).
   It stops before anything final; then call browser_state and finish with browser_click_final so the user confirms. For simple one-page actions use the step-by-step tools.
 - Anything that spends money or is final (Place order, Pay, Confirm booking, Submit application, Send) MUST go through browser_click_final.
@@ -96,7 +100,8 @@ def google_rules() -> str:
 
 class Agent:
     def __init__(self):
-        key = os.getenv("GEMINI_API_KEY")
+        key = (os.getenv("GEMINI_API_KEY") or "").strip()
+        if key == "paste_your_key_here": key = ""
         if not key and not llm_router.configured():
             raise RuntimeError("Add LLM_ROUTER_URL and LLM_ROUTER_KEY, or GEMINI_API_KEY, to the .env file (see the README).")
         self.client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=25000)) if key else None
@@ -114,13 +119,9 @@ class Agent:
                 answer = yes_no(text)
                 if answer is not None:
                     return self._confirm(session_id, answer, s["pending"]["id"])
-                # user moved on: cancel the waiting actions so the history stays valid
-                p = s["pending"]
-                for call in p["remaining"]:
-                    p["responses"].append(types.Part.from_function_response(
-                        name=call.name, response={"result": "The user skipped this action."}))
-                s["contents"].append(types.Content(role="user", parts=p["responses"]))
-                s["pending"] = None
+                # not a clear answer: run nothing, keep the action waiting and ask again
+                return {**s["pending"]["ask"], "actions": []}
+            s["cancel"] = False
             self._trim(s)
             s["contents"].append(types.Content(role="user", parts=[types.Part.from_text(text=text)]))
             return self._loop(s)
@@ -138,6 +139,7 @@ class Agent:
         if not confirm_id or not secrets.compare_digest(str(confirm_id), p["id"]):
             return {"reply": "That confirmation is no longer valid. Please ask again.", "actions": [], "error": True}
         s["pending"] = None  # one-time use: cleared before anything runs
+        s["cancel"] = False
         call = p["remaining"].pop(0)
         if approved:
             result = self._execute(call)
@@ -151,6 +153,19 @@ class Agent:
     def reset(self, session_id: str) -> None:
         with self._lock(session_id):
             self.sessions.pop(session_id, None)
+
+    def cancel(self, session_id: str) -> bool:
+        """Ask a running turn to stop before its next step. No lock: the running turn holds it."""
+        s = self.sessions.get(session_id)
+        if s is None:
+            return False
+        s["cancel"] = True
+        return True
+
+    def pending_ask(self, session_id: str):
+        """The question still waiting for confirm/cancel, so a reloaded UI can show it again."""
+        p = (self.sessions.get(session_id) or {}).get("pending")
+        return dict(p["ask"]) if p and p.get("ask") else None
 
     # ---------- internals ----------
     def _lock(self, sid: str) -> threading.RLock:
@@ -219,6 +234,12 @@ class Agent:
     def _run_calls(self, s: dict, p: dict):
         """Run queued function calls. Returns a confirm-request dict if one needs approval, else None."""
         while p["remaining"]:
+            if s.get("cancel"):  # answer the calls that will not run, so the history stays valid
+                for call in p["remaining"]:
+                    p["responses"].append(types.Part.from_function_response(
+                        name=call.name, response={"result": "The user stopped the request."}))
+                p["remaining"].clear()
+                break
             call = p["remaining"][0]
             if call.name in NEEDS_CONFIRMATION:
                 p["id"] = secrets.token_urlsafe(16)
@@ -230,11 +251,11 @@ class Agent:
                 if call.name in WINDOWS_MCP_NEEDS_CONFIRMATION:
                     shown.update(wm_context(args))
                     args = shown
-                return {
-                    "reply": f"Please confirm: {describe(call.name, args)}. Yes or no?",
+                p["ask"] = {
+                    "reply": ask_text(describe(call.name, args)),
                     "confirm": {"id": p["id"], "tool": call.name, "args": shown},
-                    "actions": p["actions"],
                 }
+                return {**p["ask"], "actions": p["actions"]}
             p["remaining"].pop(0)
             result = self._execute(call)
             p["actions"].append({"tool": call.name, "args": dict(call.args or {}), "result": result})
@@ -246,6 +267,8 @@ class Agent:
         actions = actions if actions is not None else []
         deadline = time.monotonic() + CHAT_DEADLINE
         for _ in range(MAX_STEPS):
+            if s.get("cancel"):
+                return self._stopped(s, actions)
             if time.monotonic() > deadline:
                 return {"reply": "That took too long, so I stopped here.", "actions": actions}
             try:
@@ -253,6 +276,8 @@ class Agent:
             except Exception as e:
                 msg = str(e) if isinstance(e, RuntimeError) else f"Could not reach the AI service: {e}"
                 return {"reply": msg, "actions": actions, "error": True}
+            if s.get("cancel"):  # stopped while the AI was thinking: run none of what it asked for
+                return self._stopped(s, actions)
             cand = resp.candidates[0] if resp.candidates else None
             if not cand or not cand.content:
                 return {"reply": "Sorry, I could not produce an answer. Could you rephrase?", "actions": actions}
@@ -266,6 +291,11 @@ class Agent:
                 return out
         return {"reply": "That took too many steps, so I stopped here.", "actions": actions}
 
+    def _stopped(self, s: dict, actions: list) -> dict:
+        reply = "Stopped. Steps that already ran stay done."
+        s["contents"].append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
+        return {"reply": reply, "actions": actions}
+
     def _trim(self, s: dict) -> None:
         c = s["contents"]
         if len(c) > MAX_HISTORY:
@@ -274,19 +304,6 @@ class Agent:
                 if c[i].role == "user" and c[i].parts and c[i].parts[0].text:
                     s["contents"] = c[i:]
                     return
-
-
-YES = {"haan", "han", "ha", "haa", "yes", "yeah", "yep", "ok", "okay", "theek hai", "thik hai", "kar do", "karo", "sure", "confirm", "हाँ", "हां", "हा", "ठीक है", "कर दो"}
-NO = {"na", "nahi", "nahin", "no", "nope", "cancel", "mat karo", "rehne do", "ruko", "stop", "नहीं", "ना", "मत करो", "रहने दो"}
-
-
-def yes_no(text: str):
-    t = text.lower().strip().strip(".!?। ")
-    if t in YES or any(t.startswith(y + " ") for y in YES):
-        return True
-    if t in NO or any(t.startswith(n + " ") for n in NO):
-        return False
-    return None
 
 
 def describe(name: str, args: dict) -> str:
@@ -299,6 +316,7 @@ def describe(name: str, args: dict) -> str:
     if name == "windows_shortcut":
         return f"press the shortcut {args.get('keys')}"
     return {
+        "browser_upload_file": f"upload the file {Path(str(args.get('path', ''))).name} to the open web page",
         "close_app": f"close {args.get('app_name')}",
         "lock_screen": "lock the screen",
         "type_text": f"type this text: \"{str(args.get('text', ''))[:80]}\"",

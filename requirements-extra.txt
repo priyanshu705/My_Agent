@@ -9,6 +9,9 @@ browser-use==0.13.14
 #                   the Windows-MCP server itself is started on demand with `uvx windows-mcp`, it is not pip-installed.
 mcp>=1.2
 
+# EDGE_TTS=1      - natural online voices (edge-tts, github.com/rany2/edge-tts). Needs internet; reply text goes to Microsoft.
+edge-tts==7.3.1
+
 # KOKORO_TTS=1    - free offline Hindi voice (Kokoro, Apache-2.0). Downloads ~120 MB of model files on first use.
 kokoro-onnx>=0.4
 

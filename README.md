@@ -19,7 +19,7 @@ It also handles Gmail, Google Calendar and WhatsApp (your own number). The AI be
 | Calendar | "Kal meri kya meetings hain?", "Kal 5 baje store visit add karo", "Meeting 6 baje shift karo", "Is hafte kab free hoon?" |
 | Memory | "Note karo...", "To-do mein add karo...", "10 minute baad yaad dilana...", "Yaad rakhna ki mera fav color blue hai" |
 
-Risky actions (closing apps, typing, pressing keys, locking the screen, sending a mail or WhatsApp, scheduling a WhatsApp, changing or cancelling an event) ask for **haan / na** before they run.
+Risky actions (closing apps, typing, pressing keys, locking the screen, sending a mail or WhatsApp, scheduling a WhatsApp, changing or cancelling an event) ask before they run. Press **Confirm** or say **"confirm"** ("haan confirm", "confirm karo") to go ahead. **"cancel"**, "nahi", "ruko" or any sentence with a "no" or "wait" word stops it. Anything else, including a plain "haan" or "ok", runs nothing and the question stays open.
 
 ## Setup on Windows (5 minutes)
 
@@ -65,7 +65,7 @@ The agent needs your permission to use your Gmail and Calendar. Google asks ever
 
 Your login is saved in `token.json` on your PC only. Both `credentials.json` and `token.json` are in `.gitignore`, so keep them private and never upload them. To disconnect, delete `token.json`, or remove access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
-How mails are handled: by default the agent **creates a draft** in Gmail. It sends a mail only when you clearly say "bhej do", and it still asks **haan/na** first. It never guesses an email address: it looks the person up in your old mails or asks you.
+How mails are handled: by default the agent **creates a draft** in Gmail. It sends a mail only when you clearly say "bhej do", and it still asks you to **confirm** first. It never guesses an email address: it looks the person up in your old mails or asks you.
 
 ## Phase 3: WhatsApp setup (one time, 2 minutes)
 
@@ -84,7 +84,7 @@ How the agent finds a person ("Jyotish ko WhatsApp karo"), in this order:
 2. **Google Contacts.** This needs the Phase 2 Google login. If you set up Google before Phase 3, run `setup_google.bat` again so it can read contacts, and enable the [People API](https://console.cloud.google.com/apis/library/people.googleapis.com) in the same Google Cloud project.
 3. **Your WhatsApp chat list**, searched by name.
 
-Every message, file and scheduled message asks **haan/na** first and shows you the exact text.
+Every message, file and scheduled message asks you to **confirm** first and shows you the exact text.
 
 > **Important:** This is unofficial automation of WhatsApp Web. WhatsApp can ban numbers that send bulk or spam messages. Use it for normal personal messages only. As a safety net the agent waits a few seconds between messages and never sends more than 30 per hour. Scheduled messages only go out while your PC and the agent are running.
 
@@ -109,7 +109,7 @@ Notes, to-dos, reminders, contacts and the WhatsApp login are saved in the `data
 ```
 app/
   main.py          FastAPI server (serves UI + API)
-  agent.py         Gemini brain, tool loop, haan/na confirmation
+  agent.py         Gemini brain, tool loop, confirm step
   pc_tools.py      Windows: apps, files, volume, screenshot, typing
   web_tools.py     Google search, YouTube, websites
   memory_tools.py  Notes, to-dos, reminders, facts

@@ -32,7 +32,7 @@ export type IntegrationFlags = {
 export type Cfg = {
   user_name?: string; agent_name?: string; wake_word?: string; wake_engine?: string; recognition_lang?: string;
   google_ready?: boolean; google_connected?: boolean; needs_setup?: string[]; has_key?: boolean; demo?: boolean;
-  local_tts?: boolean; model?: string; integrations?: IntegrationFlags; tunnel_url?: string; phone_url?: string;
+  local_tts?: boolean; voice_engine?: string;model?: string; integrations?: IntegrationFlags; tunnel_url?: string; phone_url?: string;
 };
 
 export type ActionStatus = "completed" | "failed" | "pending";

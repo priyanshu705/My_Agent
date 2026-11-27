@@ -31,7 +31,7 @@ function makeState(opts = {}) {
     notes: opts.empty ? [] : [{ i: 0, text: "Ideas for the weekend trip: Lonavala or Mahabaleshwar", at: ago(1200) }, { i: 1, text: "Wi-Fi password for the office is on the fridge", at: ago(3000) }],
     reminders: opts.empty ? [] : [{ text: "Pay rent", due: mins(45) }, { text: "Call the bank", due: ago(3) }, { text: "Stand-up", due: mins(600) }],
     facts: opts.empty ? [] : ["Om prefers meetings after 11 AM", "Mom's birthday is on 14 March", "Likes basmati rice", "Works in Gurgaon"],
-    pending: null, calls: [], delayChat: opts.delayChat || 0, tts: opts.tts || 503, activity: null, wakeSeq: 5,
+    pending: null, calls: [], fail: opts.fail || null, delayChat: opts.delayChat || 0, tts: opts.tts || 503, activity: null, wakeSeq: 5,
     pcOnline: opts.pcOnline !== false, whatsapp: opts.whatsapp !== false, needLogin: !!opts.needLogin,
   };
 }
@@ -55,7 +55,12 @@ async function install(page, opts = {}) {
     if (path === "/api/activity") return J(st.activity || (st.mode === "cloud" ? { phase: "idle", steps: [], done: true } : { tool: "", args: {}, seconds: 0 }));
     if (path === "/api/sessions" && method === "GET") return J({ sessions: Object.entries(st.sessions).map(([id, s]) => ({ id, title: s.title, updated: s.updated, count: s.messages.length })) });
     const m = path.match(/^\/api\/sessions\/([^/]+)$/);
-    if (m && method === "GET") return J({ id: m[1], messages: (st.sessions[m[1]] || { messages: [] }).messages });
+    if (m && method === "GET") {
+      const w = st.pending && st.pending.sid === m[1] ? st.pending : null;
+      return J({ id: m[1], messages: (st.sessions[m[1]] || { messages: [] }).messages, pending: w ? { reply: w.reply, confirm: { id: w.id, tool: w.tool, args: w.args } } : null });
+    }
+    if (st.fail && st.fail.some((f) => path.startsWith(f)) && method !== "GET") return J({ detail: "Mock failure" }, 500);
+    if (path === "/api/cancel") return J({ ok: true, stopping: true });
     if (m && method === "DELETE") { delete st.sessions[m[1]]; return J({ ok: true }); }
     if (path === "/api/reset") { if (st.sessions[body.session_id]) st.sessions[body.session_id].messages = []; return J({ ok: true }); }
     if (path === "/api/dashboard/local") return J({ todos: st.todos, notes: st.notes, reminders: st.reminders, now: iso(now()), status: { google: !!st.config.google_connected, whatsapp: st.mode === "cloud" ? false : st.whatsapp, battery: { percent: 82, plugged: true }, ...(st.mode === "cloud" ? { pc: st.pcOnline } : {}) } });
@@ -79,13 +84,14 @@ async function install(page, opts = {}) {
         await new Promise((r) => setTimeout(r, st.delayChat)); st.activity = null;
       }
       let res;
-      if (/close|band/.test(low)) { st.pending = { id: "cid-" + Date.now(), tool: "close_app", args: { app_name: "chrome" }, sid }; res = { reply: "Please confirm: close chrome. Yes or no?", actions: [], confirm: { id: st.pending.id, tool: "close_app", args: { app_name: "chrome" } } }; }
-      else if (/mail|email/.test(low)) { st.pending = { id: "cid-" + Date.now(), tool: "gmail_send", args: { to: "rahul@example.com", subject: "Report", body: "Hi Rahul, report attached." }, sid }; res = { reply: "Please confirm: send an email to rahul@example.com with subject \"Report\". Yes or no?", actions: [], confirm: { id: st.pending.id, tool: "gmail_send", args: st.pending.args } }; }
-      else if (/whatsapp/.test(low)) { st.pending = { id: "cid-" + Date.now(), tool: "whatsapp_send", args: { to: "Rahul", message: "Running 10 minutes late" }, sid }; res = { reply: "Please confirm: send a WhatsApp message to Rahul. Yes or no?", actions: [], confirm: { id: st.pending.id, tool: "whatsapp_send", args: st.pending.args } }; }
+      if (/close|band/.test(low)) { st.pending = { id: "cid-" + Date.now(), tool: "close_app", args: { app_name: "chrome" }, sid }; res = { reply: "Please confirm: close chrome. Say confirm or cancel.", actions: [], confirm: { id: st.pending.id, tool: "close_app", args: { app_name: "chrome" } } }; }
+      else if (/mail|email/.test(low)) { st.pending = { id: "cid-" + Date.now(), tool: "gmail_send", args: { to: "rahul@example.com", subject: "Report", body: "Hi Rahul, report attached." }, sid }; res = { reply: "Please confirm: send an email to rahul@example.com with subject \"Report\". Say confirm or cancel.", actions: [], confirm: { id: st.pending.id, tool: "gmail_send", args: st.pending.args } }; }
+      else if (/whatsapp/.test(low)) { st.pending = { id: "cid-" + Date.now(), tool: "whatsapp_send", args: { to: "Rahul", message: "Running 10 minutes late" }, sid }; res = { reply: "Please confirm: send a WhatsApp message to Rahul. Say confirm or cancel.", actions: [], confirm: { id: st.pending.id, tool: "whatsapp_send", args: st.pending.args } }; }
       else if (/error|fail/.test(low)) res = { reply: "The AI service is busy right now. Please try again in a minute.", actions: [], error: true };
       else if (/search|google/.test(low)) res = { reply: "I opened Google with your search.", actions: [{ tool: "google_search", args: { query: text }, result: "Opened https://www.google.com/search?q=" + encodeURIComponent(text) }] };
       else if (/note/.test(low)) res = { reply: "Saved the note.", actions: [{ tool: "add_note", args: { text }, result: "Note saved." }] };
       else res = { reply: "Sure — here is a short answer to \"" + text + "\".", actions: [] };
+      if (res.confirm) st.pending.reply = res.reply;
       st.sessions[sid].messages.push({ role: "bot", text: res.reply, at: iso(now()), actions: res.actions, confirm: res.confirm || null });
       return J(res);
     }
