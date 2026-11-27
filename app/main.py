@@ -18,8 +18,9 @@ from fastapi.responses import HTMLResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
-from . import dashboard, tts_local, wakeword  # noqa: E402
+from . import dashboard, setup_api, tts_edge, tts_gemini, tts_local, wakeword  # noqa: E402
 from .memory_tools import pop_due_reminders  # noqa: E402
+from .pages import no_ui_html  # noqa: E402
 from .util import RateLimiter  # noqa: E402
 from .whatsapp_tools import pop_notices, start_scheduler  # noqa: E402
 
@@ -70,6 +71,7 @@ app.middleware("http")(dashboard.guard)  # PC is always allowed; everyone else n
 app.add_middleware(CORSMiddleware, allow_origins=dashboard.allowed_origins(),
                    allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(dashboard.router)
+app.include_router(setup_api.router)
 start_scheduler()
 wakeword.start()
 
@@ -83,8 +85,10 @@ def google_connected() -> bool:
 
 
 def demo_mode() -> bool:
-    key = os.getenv("GEMINI_API_KEY", "")
-    return os.getenv("DEMO_MODE") == "1" or not key or key == "paste_your_key_here"
+    from . import llm_router
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    has_gemini = bool(key) and key != "paste_your_key_here"
+    return os.getenv("DEMO_MODE") == "1" or not (has_gemini or llm_router.configured())
 
 
 def agent():
@@ -106,6 +110,16 @@ def agent():
                 dashboard.install_activity_hook(new)
                 _agent = new
     return _agent
+
+
+def _forget_agent() -> None:
+    """After new AI keys are saved: build a new agent on the next message (a question still waiting is dropped)."""
+    global _agent
+    with _agent_lock:
+        _agent = None
+
+
+setup_api.on_ai_change = _forget_agent
 
 
 class ChatIn(BaseModel):
@@ -152,6 +166,13 @@ def integration_flags() -> dict:
     }
 
 
+DEFAULT_UI_URL = "https://my-agent-ui-three.vercel.app"  # the hosted UI (cloud/index.html points here too)
+
+
+def ui_url() -> str:
+    return os.getenv("UI_URL", DEFAULT_UI_URL)
+
+
 @app.get("/api/config")
 def config():
     return {
@@ -163,11 +184,12 @@ def config():
         "has_key": not demo_mode(),
         "demo": demo_mode(),
         "local_tts": tts_local.enabled(),
+        "voice_engine": setup_api.current_engine(),
         "wake_engine": "oww" if wakeword.enabled() else "browser",
         "google_connected": google_connected(),
         "phone_url": f"http://{dashboard.lan_ip()}:8000" if os.getenv("ACCESS_PIN") else "",
         "tunnel_url": dashboard.tunnel_url(),
-        "ui_url": os.getenv("UI_URL", "https://my-agent-roan-delta.vercel.app"),
+        "ui_url": ui_url(),
         "model": model_name(),
         "integrations": integration_flags(),
     }
@@ -187,8 +209,18 @@ class TtsIn(BaseModel):
 
 @app.post("/api/tts")
 def tts(body: TtsIn):
-    """Hindi speech from the free local Kokoro model (opt-in with KOKORO_TTS=1). Returns audio/wav."""
+    """Speech from the voice chosen under Integrations: Gemini, edge-tts or the offline Kokoro Hindi model.
+    A 503 answer makes the web UI use the browser's own voice."""
+    engine = setup_api.current_engine()
     try:
+        if engine == "gemini":
+            return Response(tts_gemini.synthesize(body.text, body.voice), media_type="audio/wav")
+        if engine == "edge":
+            return Response(tts_edge.synthesize(body.text, body.voice), media_type="audio/mpeg")
+        if engine == "browser":
+            raise RuntimeError("The browser voice is selected.")
+        if os.getenv("VOICE_ENGINE", "").strip().lower() == "kokoro":
+            os.environ["KOKORO_TTS"] = "1"
         return Response(tts_local.synthesize(body.text, body.voice, body.speed), media_type="audio/wav")
     except RuntimeError as e:
         raise HTTPException(503, str(e))
@@ -217,22 +249,28 @@ def reset(body: ResetIn):
     return {"ok": True}
 
 
+@app.post("/api/cancel")
+def cancel(body: ResetIn):
+    """Stop a running request before its next step. A step that is already running is not interrupted."""
+    stop = getattr(_agent, "cancel", None)
+    return {"ok": True, "stopping": bool(stop and stop(body.session_id))}
+
+
+def _pending_ask(session_id: str):
+    ask = getattr(_agent, "pending_ask", None)
+    return ask(session_id) if ask else None
+
+
+dashboard.pending_provider = _pending_ask
+
+
 @app.get("/api/reminders/due")
 def due():
     return {"due": pop_due_reminders(), "notices": pop_notices()}
 
 
-NO_UI_HTML = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>My_Agent</title><body style="font:16px system-ui;background:#050912;color:#e6f1ff;max-width:560px;margin:12vh auto;padding:0 20px">
-<h2>The agent is running, but its web UI is not built yet</h2>
-<p>Run <code>run.bat</code> again (it builds the UI once, needs Node.js 18+), or in the <code>web</code> folder run
-<code>npm install</code> then <code>npm run build:local</code>, and refresh this page.</p>
-<p>You can also use the hosted UI: <a style="color:#19d3ff" href="%s">%s</a></p>"""
-
-
 def _no_ui():
-    url = os.getenv("UI_URL", "https://my-agent-ui-three.vercel.app")
-    return HTMLResponse(NO_UI_HTML % (url, url))
+    return HTMLResponse(no_ui_html(ui_url()))
 
 
 # Must be last: the built web/ app is served at "/" and the API/login routes above take priority.

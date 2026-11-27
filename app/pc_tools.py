@@ -6,8 +6,10 @@ Windows-only libraries are imported lazily so the server still starts on other O
 
 import os
 import platform
+import re
 import subprocess
 import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +47,16 @@ SEARCH_ROOTS = [HOME / "Desktop", HOME / "Documents", HOME / "Downloads",
 # Never terminate these, even if the model asks.
 PROTECTED_PROCESSES = {"system", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe",
                        "smss.exe", "explorer.exe", "svchost.exe", "dwm.exe", "python.exe", "pythonw.exe"}
+SECRET_NAMES = {"secrets", "appdata", "application data", "local settings", "cookies", ".ssh", ".aws", ".azure", ".gnupg",
+                ".kube", ".docker", ".config", ".claude", ".codex", ".gemini", ".git", ".git-credentials", ".netrc", ".npmrc",
+                ".pypirc", "web_profile", "wa_profile", "chrome-workers", "$recycle.bin", "system volume information",
+                "login data", "id_rsa", "id_ed25519"}
+SECRET_EXT = (".pem", ".key", ".pfx", ".p12", ".kdbx", ".ovpn", ".ppk")
+SECRET_FILE = re.compile(r"(credentials|token|auth_tokens|client_secret|.*service[-_ ]?account).*\.json|ntuser\..*")
+# Opening one of these runs code, which the agent must never do on its own.
+PROGRAM_EXT = (".exe", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".msi", ".msp",
+               ".msc", ".scr", ".lnk", ".com", ".reg", ".hta", ".jar", ".py", ".pyw", ".cpl", ".pif", ".scf", ".url",
+               ".application", ".appref-ms", ".chm", ".inf", ".sh")
 MAX_TYPE_CHARS = 2000
 ALLOWED_KEYS = {"ctrl", "shift", "alt", "win", "enter", "esc", "tab", "space", "backspace", "delete", "up", "down",
                 "left", "right", "home", "end", "pageup", "pagedown", "volumemute", "volumeup", "volumedown",
@@ -52,7 +64,7 @@ ALLOWED_KEYS = {"ctrl", "shift", "alt", "win", "enter", "esc", "tab", "space", "
 
 
 def allowed_roots() -> list[Path]:
-    """Folders the agent may list, search or open. Extra roots: FILE_ROOTS=path1;path2 in .env."""
+    """Folders the agent may list, search or open. Extra roots: FILE_ROOTS=path1;path2 (Integrations page or .env)."""
     roots = [r for r in SEARCH_ROOTS]
     for extra in os.getenv("FILE_ROOTS", "").split(os.pathsep if os.pathsep != ":" else ";"):
         if extra.strip():
@@ -72,10 +84,36 @@ def safe_path(path: str | Path) -> Path | None:
         p = Path(str(path)).expanduser().resolve()
     except (OSError, RuntimeError, ValueError):
         return None
-    for root in allowed_roots():
-        if p == root or root in p.parents:
-            return p
-    return None
+    if any(_is_browser_profile(d) for d in (p, *p.parents)):
+        return None
+    # Every allowed folder that contains the path gets a say: the private part must not hide behind a wider folder.
+    inside = [root for root in allowed_roots() if (p == root or root in p.parents) and not _is_secret(root.name)]
+    if not inside or any(_is_secret(part) for root in inside for part in p.relative_to(root).parts):
+        return None
+    return p
+
+
+def _is_secret(name: str) -> bool:
+    """Passwords, keys, sign-ins and app data stay out of reach even inside an allowed folder."""
+    n = name.lower()
+    if n.startswith(".env"):
+        return n != ".env.example"
+    return (n in SECRET_NAMES or n.endswith(SECRET_EXT) or "password" in n or "passwd" in n
+            or bool(SECRET_FILE.fullmatch(n)))
+
+
+def _is_browser_profile(folder: Path) -> bool:
+    """Chrome / Edge profiles hold cookies and saved logins, wherever they are kept."""
+    try:
+        return (folder / "Local State").is_file()
+    except OSError:
+        return False
+
+
+def _not_allowed(what: str) -> str:
+    roots = "; ".join(str(r) for r in allowed_roots() if r.is_dir())
+    return (f"{what} is outside the folders I am allowed to use. Allowed now: {roots}. "
+            "The user can add a folder under Integrations, 'Folders the agent can see'.")
 
 
 def _start_menu_shortcuts():
@@ -147,7 +185,8 @@ def list_running_apps() -> str:
 # ---------------- Files ----------------
 
 def search_files(query: str, max_results: int = 10) -> str:
-    """Search the user's files (Desktop, Documents, Downloads, Pictures, Videos, Music, OneDrive) by name.
+    """Search file and folder names in the user's allowed folders (Desktop, Documents, Downloads, Pictures, Videos, Music,
+    OneDrive and any folder the user added).
 
     Args:
         query: Part of the file or folder name to look for.
@@ -157,22 +196,34 @@ def search_files(query: str, max_results: int = 10) -> str:
     max_results = max(1, min(int(max_results), 30))
     found = []
     start = time.time()
-    for root in SEARCH_ROOTS:
-        if not root.exists():
+    # Level by level across all folders, so a folder near the top of any of them is found before deep files elsewhere.
+    queue = deque(dict.fromkeys(str(r) for r in allowed_roots() if r.is_dir()))
+    seen = set(queue)
+    found += [d for d in queue if q in os.path.basename(d).lower()]
+    while queue and len(found) < max_results and time.time() - start < 8:
+        try:
+            folder = queue.popleft()
+            if _is_browser_profile(Path(folder)):
+                continue
+            entries = list(os.scandir(folder))
+        except OSError:
             continue
-        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".git")
-                           and not os.path.islink(os.path.join(dirpath, d))]
-            for f in filenames + dirnames:
-                if q in f.lower():
-                    found.append(os.path.join(dirpath, f))
-                    if len(found) >= max_results:
-                        break
-            if len(found) >= max_results or time.time() - start > 8:
-                break
+        for e in entries:
+            if _is_secret(e.name):
+                continue
+            if q in e.name.lower() and e.path not in found:
+                found.append(e.path)
+            try:
+                is_dir = e.is_dir(follow_symlinks=False) and not os.path.islink(e.path)
+            except OSError:
+                continue
+            if is_dir and e.path not in seen and not e.name.startswith((".", "$")) and e.name not in ("node_modules", "__pycache__"):
+                seen.add(e.path)
+                queue.append(e.path)
     if not found:
-        return f"No file named '{query}' was found."
-    return "Mili files:\n" + "\n".join(found)
+        return (f"No file named '{query}' was found in: " + "; ".join(str(r) for r in allowed_roots() if r.is_dir())
+                + ". Other folders can be added under Integrations, 'Folders the agent can see'.")
+    return "Mili files:\n" + "\n".join(found[:max_results])
 
 
 def open_file(path: str) -> str:
@@ -183,9 +234,11 @@ def open_file(path: str) -> str:
     """
     p = safe_path(path)
     if p is None:
-        return "That path is outside the folders I am allowed to use (Desktop, Documents, Downloads, Pictures, Videos, Music, OneDrive)."
+        return _not_allowed("That path")
     if not p.exists():
         return f"This path does not exist: {path}"
+    if p.is_file() and p.name.lower().rstrip(". ").endswith(PROGRAM_EXT):
+        return "Program and script files are not opened by the agent. The user can open it from File Explorer."
     if not IS_WINDOWS:
         return f"(Demo) {p} Windows par khulta."
     os.startfile(str(p))
@@ -193,20 +246,25 @@ def open_file(path: str) -> str:
 
 
 def list_folder(folder: str = "Downloads") -> str:
-    """List what is inside a folder. Accepts 'Desktop', 'Downloads', 'Documents' or a full path.
+    """List what is inside a folder. Accepts 'Desktop', 'Downloads', 'Documents', the name of an added folder, or a full path.
 
     Args:
         folder: Folder name or full path.
     """
     p = Path(folder).expanduser()
     if not p.is_absolute():
-        p = HOME / folder
+        # in the home folder, inside an allowed folder (OneDrive\Desktop) or an added folder with that name
+        roots = allowed_roots()
+        options = [HOME / folder, *(r / folder for r in roots), *(r for r in roots if r.name.lower() == folder.strip().lower())]
+        existing = [o for o in options if o.is_dir()]
+        # a folder with the same name in the home folder must not shadow one the agent is allowed to use
+        p = next((o for o in existing if safe_path(o)), existing[0] if existing else HOME / folder)
     p = safe_path(p)
     if p is None:
-        return "That folder is outside the folders I am allowed to use."
+        return _not_allowed("That folder")
     if not p.is_dir():
         return f"Folder not found: {folder}"
-    items = sorted(p.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:40]
+    items = sorted((i for i in p.iterdir() if not _is_secret(i.name)), key=lambda x: x.stat().st_mtime, reverse=True)[:40]
     return f"{p} mein (latest pehle):\n" + "\n".join(("[DIR] " if i.is_dir() else "") + i.name for i in items)
 
 
@@ -321,5 +379,5 @@ def press_keys(keys: str) -> str:
 PC_TOOLS = [open_app, close_app, list_running_apps, search_files, open_file, list_folder,
             set_volume, mute_volume, take_screenshot, lock_screen, system_status, type_text, press_keys]
 
-# These change things the user may not expect, so the UI asks "haan/na" first.
+# These change things the user may not expect, so the user is asked to confirm first.
 NEEDS_CONFIRMATION = {"close_app", "lock_screen", "type_text", "press_keys"}

@@ -20,7 +20,7 @@ After a reboot, get the new link from `data\phone_link.txt` or Settings at `http
 
 ## Safety
 - The agent only listens on 127.0.0.1. The tunnel is the only way in and needs the PIN (5 wrong tries lock that device, longer each time).
-- Risky actions (sending mail or WhatsApp, typing, closing apps, locking, cancelling events) still ask haan/na.
+- Risky actions (sending mail or WhatsApp, typing, closing apps, locking, cancelling events) still ask you to confirm.
 - Keep the PIN private. To log everyone out, delete `data\auth_tokens.json` and restart.
 - Your PC must be on and awake for this to work.
 
@@ -31,7 +31,7 @@ After a reboot, get the new link from `data\phone_link.txt` or Settings at `http
 - [ ] Say "Volume 40 kar do" using the mic on the phone
 - [ ] "Aaj ke unread mail batao" (needs Gmail setup): the Mail panel fills in
 - [ ] "Kal meri kya meetings hain?": the Calendar panel fills in
-- [ ] "Jyotish ko WhatsApp karo ki ..." shows a confirm card; tap Na and nothing is sent; repeat and tap Haan
+- [ ] "Jyotish ko WhatsApp karo ki ..." shows a confirm card; tap Cancel and nothing is sent; repeat and tap Confirm
 - [ ] "10 minute baad yaad dilana ...": reminder appears in the panel and fires on time
 - [ ] To-do and notes added from the panel show up when you ask the agent for them
 - [ ] Close the tunnel window: the phone shows "PC offline"; start it again and reconnect with the new link

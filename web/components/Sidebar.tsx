@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Bell, Brain, LayoutDashboard, ListChecks, LogOut, MessageSquare, Plug, Plus, Settings as Cog, StickyNote, Trash2, Workflow, X, type LucideIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
 import type { View } from "@/lib/types";
-import { cn, useFocusTrap } from "./ui";
+import { Button, Dialog, cn, useFocusTrap } from "./ui";
 
 export const NAV: { group: string; items: { id: View; label: string; Icon: LucideIcon }[] }[] = [
   { group: "Workspace", items: [{ id: "overview", label: "Overview", Icon: LayoutDashboard }, { id: "chat", label: "Chat", Icon: MessageSquare }, { id: "automation", label: "Automation", Icon: Workflow }] },
@@ -22,6 +22,7 @@ export default function Sidebar() {
   const { sessions, sid, newChat, openSession, deleteSession, go, view, logout, sidebarOpen, set, pcOnline, online, mode, settings, cfg } = useStore();
   const desktop = useIsDesktop(); const drawer = !desktop && sidebarOpen;
   const ref = useFocusTrap(drawer, () => set({ sidebarOpen: false }));
+  const [doomed, setDoomed] = useState<{ id: string; title: string } | null>(null);
   const name = settings.name || cfg.user_name || "You";
   const status = !online ? "Backend offline" : mode === "local" ? "PC agent running" : pcOnline ? "PC agent online" : "PC agent offline";
   return (
@@ -49,7 +50,7 @@ export default function Sidebar() {
                 {g.items.map(({ id, label, Icon }) => (
                   <li key={id}>
                     <button type="button" onClick={() => go(id)} aria-current={view === id ? "page" : undefined}
-                      className={cn("flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors", view === id ? "bg-sidebar-2 font-medium text-white" : "hover:bg-sidebar-2/60 hover:text-white")}>
+                      className={cn("flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 text-sm transition-colors", view === id ? "bg-sidebar-2 font-medium text-white shadow-[inset_3px_0_0_rgb(var(--sidebar-text))]" :"hover:bg-sidebar-2/60 hover:text-white")}>
                       <Icon size={17} aria-hidden /> {label}
                     </button>
                   </li>
@@ -66,7 +67,7 @@ export default function Sidebar() {
                   <button type="button" onClick={() => { void openSession(s.id); go("chat"); }} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 text-left text-sm" aria-current={s.id === sid && view === "chat" ? "true" : undefined}>
                     <MessageSquare size={14} className="shrink-0 opacity-70" aria-hidden /><span className="truncate">{s.title || "New chat"}</span>
                   </button>
-                  <button type="button" onClick={() => void deleteSession(s.id)} aria-label={`Delete conversation ${s.title || "New chat"}`}
+                  <button type="button" onClick={() => setDoomed({ id: s.id, title: s.title || "New chat" })} aria-label={`Delete conversation ${s.title || "New chat"}`}
                     className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-sidebar-muted opacity-100 hover:text-white focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100"><Trash2 size={14} aria-hidden /></button>
                 </li>
               ))}
@@ -79,6 +80,13 @@ export default function Sidebar() {
           <button type="button" onClick={logout} className="flex min-h-[44px] w-full items-center gap-2.5 rounded-lg px-3 text-sm hover:bg-sidebar-2/60 hover:text-white"><LogOut size={16} aria-hidden /> Sign out · {name}</button>
         </div>
       </aside>
+      <Dialog open={!!doomed} onClose={() => setDoomed(null)} title="Delete this conversation?" tone="danger"
+        description={`“${doomed?.title ?? ""}” is removed for good. Notes, tasks, reminders and memory are kept.`}>
+        <div className="flex justify-end gap-2 text-ink">
+          <Button onClick={() => setDoomed(null)} data-autofocus>Keep it</Button>
+          <Button variant="danger" onClick={() => { const d = doomed; setDoomed(null); if (d) void deleteSession(d.id); }}>Delete</Button>
+        </div>
+      </Dialog>
     </>
   );
 }

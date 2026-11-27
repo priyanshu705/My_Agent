@@ -26,7 +26,11 @@ export function useOrbState(): OrbState {
 
 const rgb = (name: string) => getComputedStyle(document.documentElement).getPropertyValue("--" + name).trim().replace(/ /g, ",");
 
-/** Canvas orb: indigo sphere, glow and rings. Animates only while visible and never when reduced motion is requested. */
+/** Seconds the orb keeps moving in a resting state before it holds still (WCAG 2.2.2). */
+const SETTLE = 4.5;
+
+/** Canvas orb: indigo sphere, glow and rings. Animates only while visible, settles when nothing is happening,
+ *  and never moves when reduced motion is requested. */
 export default function Orb({ size = 160, state, onClick, label }: { size?: number; state?: OrbState; onClick?: () => void; label?: string }) {
   const own = useOrbState(); const st = state ?? own;
   const ref = useRef<HTMLCanvasElement>(null); const stRef = useRef<OrbState>(st); stRef.current = st;
@@ -36,11 +40,12 @@ export default function Orb({ size = 160, state, onClick, label }: { size?: numb
     const cv = ref.current!; const ctx = cv.getContext("2d")!;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = size * dpr; cv.height = size * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    let raf = 0, t = 0, lvl = 0;
+    let raf = 0, t = 0, lvl = 0, seen = stRef.current, since = 0;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const draw = () => {
       t += reduce ? 0 : 0.016;
       const s = stRef.current; const c = size / 2; const base = size * 0.28;
+      if (s !== seen) { seen = s; since = t; }
       const bad = s === "denied" || s === "unavailable" || s === "error";
       const target = s === "speaking" || s === "listening" ? voice.level() : s === "processing" ? 0.3 + Math.sin(t * 4) * 0.1 : s === "wake" ? 0.12 + Math.sin(t * 1.6) * 0.05 : 0.07 + Math.sin(t * 1.1) * 0.03;
       lvl += (target - lvl) * 0.15;
@@ -64,22 +69,24 @@ export default function Orb({ size = 160, state, onClick, label }: { size?: numb
       // body
       const r = base * (1 + lvl * 0.35);
       const body = ctx.createRadialGradient(c - r * 0.35, c - r * 0.4, r * 0.1, c, c, r * 1.1);
-      body.addColorStop(0, `rgb(${light})`); body.addColorStop(0.55, `rgb(${main})`); body.addColorStop(1, bad ? `rgb(${main})` : "rgb(60,58,170)");
+      body.addColorStop(0, `rgb(${light})`); body.addColorStop(0.55, `rgb(${main})`); body.addColorStop(1, bad ? `rgb(${main})` : `rgb(${rgb("orb-deep")})`);
       ctx.beginPath(); ctx.arc(c, c, r, 0, 7); ctx.fillStyle = body; ctx.fill();
       const hl = ctx.createRadialGradient(c - r * 0.4, c - r * 0.45, 1, c - r * 0.25, c - r * 0.3, r * 0.9);
-      hl.addColorStop(0, "rgba(255,255,255,.6)"); hl.addColorStop(1, "rgba(255,255,255,0)");
+      const shine = rgb("orb-shine");
+      hl.addColorStop(0, `rgba(${shine},.6)`); hl.addColorStop(1, `rgba(${shine},0)`);
       ctx.beginPath(); ctx.arc(c, c, r, 0, 7); ctx.fillStyle = hl; ctx.fill();
-      if (!reduce && !document.hidden) raf = requestAnimationFrame(draw);
+      const resting = s === "idle" || s === "wake" || bad;
+      if (!reduce && !document.hidden && !(resting && t - since > SETTLE)) raf = requestAnimationFrame(draw);
     };
-    drawRef.current = draw;
+    drawRef.current = () => { cancelAnimationFrame(raf); draw(); };
     const onVis = () => { cancelAnimationFrame(raf); if (!document.hidden && !reduce) raf = requestAnimationFrame(draw); };
     document.addEventListener("visibilitychange", onVis);
-    const mo = new MutationObserver(() => { if (reduce) draw(); }); mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    const mo = new MutationObserver(() => drawRef.current?.());mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     draw();
     return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", onVis); mo.disconnect(); drawRef.current = null; };
   }, [size]);
 
-  useEffect(() => { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) drawRef.current?.(); }, [st]);
+  useEffect(() => { drawRef.current?.(); }, [st]); // redraw on a new state, which also wakes a settled orb
 
   const Icon = st === "denied" ? ShieldAlert : st === "unavailable" ? MicOff : st === "error" ? AlertTriangle : null;
   const aria = label ?? `Voice assistant: ${ORB_LABEL[st]}`;

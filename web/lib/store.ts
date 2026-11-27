@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import { api, apiRaw, getToken, setToken, setAuthLostHandler, AuthError } from "./api";
 import { voice } from "./voice";
+import { voiceAnswer } from "./approval";
 import { IDLE_ACT, normalizeActivity } from "./activity";
 import type { Activity, CalEvent, Cfg, Confirm, Mail, Memory, Mode, Msg, Note, Reminder, Session, Settings, Theme, Todo, UiState, View, VoiceIssue } from "./types";
 
@@ -33,10 +34,13 @@ export function applyTheme(theme: Theme) {
   if (typeof document === "undefined") return;
   const t = theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
   document.documentElement.dataset.theme = t;
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) { meta = document.createElement("meta"); meta.setAttribute("name", "theme-color"); document.head.appendChild(meta); }
+  meta.setAttribute("content", `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().split(" ").join(",")})`);
 }
 
-type Toast = { id: string; text: string };
-type Dash = { todos: Todo[]; notes: Note[]; reminders: Reminder[]; calendar: CalEvent[]; mail: Mail[]; calendarConnected: boolean; mailConnected: boolean; whatsappSession: boolean | null; battery: { percent: number; plugged: boolean } | null };
+type Toast = { id: string; text: string; sticky?: boolean };
+type Dash = { todos: Todo[]; notes: Note[]; reminders: Reminder[]; calendar: CalEvent[]; mail: Mail[]; calendarConnected: boolean; mailConnected: boolean; calendarError: boolean; mailError: boolean; whatsappSession: boolean | null; battery: { percent: number; plugged: boolean } | null };
 
 interface State {
   ready: boolean; authed: boolean; loggingIn: boolean; loginError: string;
@@ -53,7 +57,8 @@ interface State {
   newChat(): void; openSession(id: string): Promise<void>; deleteSession(id: string): Promise<void>; deleteAllSessions(): Promise<void>;
   refreshSessions(): Promise<void>; refreshDash(): Promise<void>; refreshStatus(): Promise<void>; loadMemory(): Promise<void>;
   addTodo(t: string): Promise<void>; toggleTodo(i: number): Promise<void>; addNote(t: string): Promise<void>; addReminder(t: string, minutes: number): Promise<void>;
-  toggleMic(): Promise<void>; setSettings(p: Partial<Settings>): void; toast(text: string): void; go(v: View): void; ask(text: string): void;
+  toggleMic(): Promise<void>; setSettings(p: Partial<Settings>): void; toast(text: string, sticky?: boolean): void; dismissToast(id: string): void; go(v: View): void; ask(text: string): void;
+  confirmError: string; dismissConfirm(): void; stopRequest(): Promise<void>;
   syncWake(): void; set(p: Partial<State>): void; playSample(): Promise<void>; connectGoogle(): Promise<void>;
 }
 
@@ -65,6 +70,7 @@ let wakeTimer: ReturnType<typeof setInterval> | null = null;
 let wakeSeq: number | null = null;
 let gen = 0; // bumped on logout / session switch so late responses from the old state are ignored
 let emptyCount = 0;
+let reqId = 0; // bumped when a request is stopped or abandoned, so its late answer is ignored
 let mq: MediaQueryList | null = null;
 
 const MIC_MSG: Record<string, string> = {
@@ -83,9 +89,12 @@ export const useStore = create<State>((set, get) => {
     if (status) set({ voiceStatus: status });
     if (get().ui === "speaking") set({ ui: "idle" });
   };
+  // The microphone opens by itself only for someone who is using their voice, never after a typed command.
+  let nextFromVoice = false, lastFromVoice = false;
+  const sendVoice = (text: string) => { nextFromVoice = true; void get().send(text); };
   const afterReply = (needConfirm: boolean) => {
     if (get().busy) return;
-    if ((needConfirm || get().convoActive) && voice.canListen) void listenOnce();
+    if ((get().convoActive || (needConfirm && lastFromVoice)) && voice.canListen) void listenOnce();
   };
   const startActivity = (sid: string) => {
     stopActivity();
@@ -106,7 +115,7 @@ export const useStore = create<State>((set, get) => {
   /** Starts one voice capture. "listening" is only shown once the recognizer has really started. */
   const listenOnce = async () => {
     const st = get();
-    if (!voice.canListen) { st.toast("Voice input is not supported in this browser. Use Chrome or Edge on a secure connection."); set({ convoActive: false, voiceIssue: "unavailable" }); return; }
+    if (!voice.canListen) { st.toast("Voice input is not supported in this browser. Use Chrome or Edge on a secure connection.", true); set({ convoActive: false, voiceIssue: "unavailable" }); return; }
     const ok = await voice.listen({
       lang: st.settings.srLang,
       onInterim: (t) => set({ interim: t }),
@@ -114,13 +123,13 @@ export const useStore = create<State>((set, get) => {
         set({ interim: "" });
         if (err) {
           if (MIC_MSG[err]) {
-            get().toast(MIC_MSG[err]);
+            get().toast(MIC_MSG[err], true);
             set({ convoActive: false, ui: "idle", voiceIssue: err === "audio-capture" ? "unavailable" : err === "network" ? "error" : "denied" });
             return;
           }
           set({ voiceIssue: "error" });
         }
-        if (text) { emptyCount = 0; set({ ui: "thinking" }); void get().send(text); return; }
+        if (text) { emptyCount = 0; set({ ui: "thinking" }); sendVoice(text); return; }
         emptyCount++;
         if (get().convoActive && emptyCount < 3 && !get().busy) { setTimeout(() => get().convoActive && !get().busy && void listenOnce(), 250); return; }
         set({ convoActive: false, ui: "idle" });
@@ -139,7 +148,7 @@ export const useStore = create<State>((set, get) => {
   const onWake = (after: string) => {
     stopWakeLoops();
     if (get().busy || get().ui !== "idle") return;
-    if (after.split(" ").length >= 2) { void get().send(after); return; }
+    if (after.split(" ").length >= 2) { sendVoice(after); return; }
     set({ ui: "speaking" });
     void voice.speak("Yes, I'm listening.", { voice: get().settings.voice, rate: get().settings.rate }).then(() => { set({ ui: "idle" }); void listenOnce(); });
   };
@@ -162,7 +171,7 @@ export const useStore = create<State>((set, get) => {
     } else if (!voice.waking && !voice.wakeBlocked) {
       const started = voice.startWake({
         lang: st.settings.srLang, word: st.settings.wakeWord || st.cfg.wake_word || "hey agent", onHit: onWake,
-        onError: (e) => { set({ wakeActive: false, wakeNote: MIC_MSG[e] || "The wake word could not use the microphone.", voiceIssue: e === "audio-capture" ? "unavailable" : "denied" }); get().toast(MIC_MSG[e] || "The wake word could not start."); },
+        onError: (e) => { set({ wakeActive: false, wakeNote: MIC_MSG[e] || "The wake word could not use the microphone.", voiceIssue: e === "audio-capture" ? "unavailable" : "denied" }); get().toast(MIC_MSG[e] || "The wake word could not start.", true); },
       });
       set({ wakeActive: started, wakeNote: started ? "" : "The wake word could not start in this browser." });
     } else if (voice.wakeBlocked && get().wakeActive) set({ wakeActive: false });
@@ -182,7 +191,7 @@ export const useStore = create<State>((set, get) => {
         const r = await api<{ due: string[]; notices: string[] }>("/api/reminders/due", { timeout: 10000 });
         for (const t of r.due || []) {
           set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "bot", text: "Reminder: " + t, at: nowHM() }] }));
-          get().toast("Reminder: " + t);
+          get().toast("Reminder: " + t, true);
           if ("Notification" in window && Notification.permission === "granted") new Notification("Reminder", { body: t });
           void speakReply("Reminder: " + t);
         }
@@ -227,14 +236,28 @@ export const useStore = create<State>((set, get) => {
     ready: false, authed: false, loggingIn: false, loginError: "", mode: "local", online: true, checkedAt: 0, cfg: {},
     settings: DEFAULT_SETTINGS, sessions: [], sid: "", msgs: [], ui: "idle", busy: false, activity: IDLE_ACT, interim: "", voiceStatus: "",
     voiceIssue: null, wakeActive: false, wakeNote: "",
-    dash: { todos: [], notes: [], reminders: [], calendar: [], mail: [], calendarConnected: false, mailConnected: false, whatsappSession: null, battery: null },
-    pcOnline: false, toasts: [], convoActive: false, memory: null, memoryUnsupported: false, draft: "", view: "overview", sidebarOpen: false,
+    dash: { todos: [], notes: [], reminders: [], calendar: [], mail: [], calendarConnected: false, mailConnected: false, calendarError: false, mailError: false, whatsappSession: null, battery: null },
+    pcOnline: false, toasts: [], confirmError: "",convoActive: false, memory: null, memoryUnsupported: false, draft: "", view: "overview", sidebarOpen: false,
     set: (p) => set(p as any),
     syncWake,
 
-    toast: (text) => {
-      const id = uid(); set((s) => ({ toasts: [...s.toasts, { id, text }].slice(-4) }));
-      setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 5500);
+    toast: (text, sticky) => { set((s) => ({ toasts: [...s.toasts, { id: uid(), text, sticky }].slice(-4) })); },
+    dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+    dismissConfirm: () => {
+      set((s) => ({ msgs: s.msgs.map((m) => (m.confirm ? { ...m, confirm: null } : m)), confirmError: "" }));
+      get().toast("Closed. If the action is still waiting, it shows again when you reopen this chat.", true);
+    },
+    stopRequest: async () => {
+      if (!get().busy) return;
+      const { sid, mode } = get();
+      reqId++; gen++; stopJob(); stopActivity(); voice.stop(); voice.stopListening();
+      set((s) => ({ busy: false, ui: "idle", convoActive: false, interim: "", activity: { ...s.activity, done: true, phase: "idle" }, msgs: s.msgs.map((m) => (m.pendingJob ? { ...m, pendingJob: null } : m)) }));
+      let told = false;
+      if (mode === "local") { try { told = !!(await api<{ stopping?: boolean }>("/api/cancel", { method: "POST", json: { session_id: sid }, timeout: 10000 })).stopping; } catch {} }
+      if (get().sid !== sid) return;
+      const text = told ? "Stopped. No further steps will start. A step that was already running may still finish."
+        : "Stopped waiting. The task may still be running. Risky steps still ask you first.";
+      set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "bot", text, at: nowHM() }] }));
     },
     go: (v) => set({ view: v, sidebarOpen: false }),
     /** Quick actions send an ordinary chat message: they go through the same agent and the same confirmations as typing it. */
@@ -275,7 +298,6 @@ export const useStore = create<State>((set, get) => {
         await get().openSession(sid);
         void get().refreshDash(); void get().refreshStatus();
         startTimers();
-        if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission();
       }
     },
 
@@ -289,7 +311,7 @@ export const useStore = create<State>((set, get) => {
         startTimers();
       } catch (e: any) { set({ loggingIn: false, loginError: e?.message || "Sign-in failed." }); }
     },
-    logout: () => { gen++; setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); stopWakeLoops(); set({ authed: false, msgs: [], convoActive: false, ui: "idle", view: "overview" }); },
+    logout: () => { gen++; reqId++;setToken(""); voice.stop(); voice.stopListening(); stopActivity(); stopJob(); stopTimers(); stopWakeLoops(); set({ authed: false, msgs: [], convoActive: false, ui: "idle", view: "overview" }); },
 
     refreshSessions: async () => { try { const r = await api<{ sessions: Session[] }>("/api/sessions"); set({ sessions: r.sessions }); } catch {} },
     refreshDash: async () => {
@@ -301,8 +323,10 @@ export const useStore = create<State>((set, get) => {
           ...(s.mode === "cloud" ? { pcOnline: !!d.status?.pc } : {}),
         }));
       } catch {}
-      try { const c = await api<any>("/api/dashboard/calendar"); set((s) => ({ dash: { ...s.dash, calendar: c.events || [], calendarConnected: !!c.connected } })); } catch {}
-      try { const m = await api<any>("/api/dashboard/mail"); set((s) => ({ dash: { ...s.dash, mail: m.mails || [], mailConnected: !!m.connected } })); } catch {}
+      try { const c = await api<any>("/api/dashboard/calendar"); set((s) => ({ dash: { ...s.dash, calendar: c.events || [], calendarConnected: !!c.connected, calendarError: !!c.error } })); }
+      catch { set((s) => ({ dash: { ...s.dash, calendarError: true } })); }
+      try { const m = await api<any>("/api/dashboard/mail"); set((s) => ({ dash: { ...s.dash, mail: m.mails || [], mailConnected: !!m.connected, mailError: !!m.error } })); }
+      catch { set((s) => ({ dash: { ...s.dash, mailError: true } })); }
     },
     loadMemory: async () => {
       try { const m = await api<Memory>("/api/memory", { timeout: 10000 }); set({ memory: m, memoryUnsupported: false }); }
@@ -310,41 +334,66 @@ export const useStore = create<State>((set, get) => {
     },
 
     openSession: async (id) => {
-      gen++; stopJob(); ls.set("sid", id); voice.stop(); stopActivity();
-      set({ sid: id, sidebarOpen: false, activity: IDLE_ACT, busy: false, ui: "idle" });
+      const g = ++gen; reqId++; stopJob(); ls.set("sid", id); voice.stop(); stopActivity();
+      set({ sid: id, sidebarOpen: false, activity: IDLE_ACT, busy: false, ui: "idle", confirmError: "" });
       try {
-        const r = await api<{ messages: any[] }>("/api/sessions/" + encodeURIComponent(id));
+        const r = await api<{ messages: any[]; pending?: { reply: string; confirm: Confirm } | null }>("/api/sessions/" + encodeURIComponent(id));
+        if (g !== gen) return;
         const msgs: Msg[] = r.messages.map((m) => ({ id: uid(), role: m.role === "user" ? "user" : "bot", text: m.text, at: (m.at || "").slice(11, 16) || nowHM(), actions: m.actions }));
+        // The backend says what is still waiting for approval; show it again after a reload or a chat switch.
+        if (r.pending?.confirm) {
+          const last = msgs[msgs.length - 1];
+          if (last && last.role === "bot" && last.text === r.pending.reply) last.confirm = r.pending.confirm;
+          else msgs.push({ id: uid(), role: "bot", text: r.pending.reply, at: nowHM(), confirm: r.pending.confirm });
+        }
         set({ msgs });
-      } catch { set({ msgs: [] }); }
+      } catch (e) { if (g !== gen) return; set({ msgs: [] }); if (!(e instanceof AuthError)) get().toast("Could not load this conversation.", true); }
       await get().refreshSessions();
     },
     newChat: () => { const id = uid(); void get().openSession(id); set({ msgs: [], view: "chat" }); },
     deleteSession: async (id) => {
-      try { await api("/api/sessions/" + encodeURIComponent(id), { method: "DELETE" }); } catch {}
+      try { await api("/api/sessions/" + encodeURIComponent(id), { method: "DELETE" }); }
+      catch { get().toast("Could not delete that conversation. Nothing was removed.", true); void get().refreshStatus(); return; }
+      get().toast("Conversation deleted.");
       if (id === get().sid) get().newChat(); else await get().refreshSessions();
     },
     deleteAllSessions: async () => {
-      for (const s of get().sessions) { try { await api("/api/sessions/" + encodeURIComponent(s.id), { method: "DELETE" }); } catch {} }
-      get().newChat(); await get().refreshSessions(); get().toast("All conversations deleted.");
+      let failed = 0;
+      for (const s of get().sessions) { try { await api("/api/sessions/" + encodeURIComponent(s.id), { method: "DELETE" }); } catch { failed++; } }
+      if (!failed) { get().newChat(); await get().refreshSessions(); get().toast("All conversations deleted."); return; }
+      get().toast(`${failed} conversation${failed === 1 ? "" : "s"} could not be deleted.`, true);
+      void get().refreshStatus(); await get().refreshSessions();
     },
     resetChat: async () => {
       const sid = get().sid;
-      try { await api("/api/reset", { method: "POST", json: { session_id: sid } }); set({ msgs: [], activity: IDLE_ACT }); get().toast("Conversation reset."); }
-      catch (e: any) { get().toast(e?.message || "Could not reset the conversation."); }
+      try { await api("/api/reset", { method: "POST", json: { session_id: sid } }); set({ msgs: [], activity: IDLE_ACT, confirmError: "" }); get().toast("Conversation reset."); }
+      catch (e: any) { get().toast(e?.message || "Could not reset the conversation.", true); }
     },
 
     send: async (text) => {
+      const spoken = nextFromVoice; nextFromVoice = false;
       const t = text.trim(); if (!t || get().busy) return;
+      lastFromVoice = spoken;
+      if (!spoken) { voice.stopListening(); set({ convoActive: false, interim: "" }); }
       voice.stop(); voice.unlock();
-      const sid = get().sid;
+      // While an action waits for approval, words are only an answer to it. They never go to /api/chat.
+      if (get().msgs.some((m) => m.confirm)) {
+        const answer = voiceAnswer(t);
+        if (answer !== null) return get().confirm(answer);
+        set({ convoActive: false, ui: "idle" });
+        get().toast(`Heard “${t}”. Nothing ran. Say “confirm” or “cancel”, or use the buttons.`);
+        return;
+      }
+      const sid = get().sid; const my = ++reqId;
       set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "user", text: t, at: nowHM() }], busy: true, ui: "thinking", draft: "", activity: { phase: "understand", steps: [{ phase: "understand", label: "Understanding your request", ms: 0 }], done: false } }));
       startActivity(sid);
       try {
-        const data = await api<any>("/api/chat", { method: "POST", json: { text: t, session_id: sid }, timeout: 70000 });
+        const data = await api<any>("/api/chat", { method: "POST", json: { text: t, session_id: sid }, timeout: 180000 });
+        if (my !== reqId) return;
         handle(sid, data);
       } catch (e: any) {
-        stopActivity();
+        if (my !== reqId) return;
+        stopActivity(); void get().refreshStatus();
         if (e instanceof AuthError) return;
         set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.name === "AbortError" ? "the request took too long." : e?.message || e), at: nowHM(), error: true }], busy: false, ui: "idle", activity: { ...s.activity, done: true, phase: "error" } }));
       }
@@ -352,19 +401,41 @@ export const useStore = create<State>((set, get) => {
 
     confirm: async (approved) => {
       const sid = get().sid;
-      const confirmId = [...get().msgs].reverse().find((m) => m.confirm)?.confirm?.id || "";
-      if (!confirmId) { get().toast("That request has expired. Please ask again."); return; }
-      set((s) => ({ msgs: s.msgs.map((m, i, a) => (i === a.length - 1 || m.confirm ? { ...m, confirm: null } : m)), busy: true, ui: "thinking" }));
-      voice.stop(); startActivity(sid);
-      set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "user", text: approved ? "Yes, go ahead." : "No, cancel it.", at: nowHM() }] }));
-      try { handle(sid, await api<any>("/api/confirm", { method: "POST", json: { approved, confirm_id: confirmId, session_id: sid }, timeout: 70000 })); }
-      catch (e: any) { stopActivity(); if (e instanceof AuthError) return; set((s) => ({ msgs: [...s.msgs, { id: uid(), role: "sys", text: "Something went wrong: " + (e?.message || e), at: nowHM(), error: true }], busy: false, ui: "idle" })); }
+      const asked = [...get().msgs].reverse().find((m) => m.confirm);
+      const pending = asked?.confirm;
+      if (!asked || !pending?.id) { get().toast("That request has expired. Please ask again."); return; }
+      const my = ++reqId; const answerId = uid();
+      set((s) => ({ msgs: s.msgs.map((m) => (m.confirm ? { ...m, confirm: null } : m)), busy: true, ui: "thinking", confirmError: "" }));
+      voice.stopListening(); voice.stop(); set({ interim: "" }); startActivity(sid);
+      set((s) => ({ msgs: [...s.msgs, { id: answerId, role: "user", text: approved ? "Yes, go ahead." : "No, cancel it.", at: nowHM() }] }));
+      try {
+        const data = await api<any>("/api/confirm", { method: "POST", json: { approved, confirm_id: pending.id, session_id: sid }, timeout: 180000 });
+        if (my !== reqId) return;
+        handle(sid, data);
+      } catch (e: any) {
+        if (my !== reqId) return;
+        stopActivity(); if (e instanceof AuthError) return;
+        // We do not know whether the answer arrived, so keep the question on screen. The id works only once.
+        set((s) => ({
+          msgs: s.msgs.filter((m) => m.id !== answerId).map((m) => (m.id === asked.id ? { ...m, confirm: pending } : m)),
+          confirmError: "Your answer may not have reached the assistant (" + (e?.name === "AbortError" ? "the request took too long" : e?.message || e) + ").",
+          busy: false, ui: "idle", activity: { ...s.activity, done: true, phase: "error" },
+        }));
+        void get().refreshStatus();
+      }
     },
 
     addTodo: async (t) => { await api("/api/todos", { method: "POST", json: { text: t } }); await get().refreshDash(); },
-    toggleTodo: async (i) => { await api(`/api/todos/${i}/toggle`, { method: "POST" }); await get().refreshDash(); },
+    toggleTodo: async (i) => {
+      try { await api(`/api/todos/${i}/toggle`, { method: "POST" }); }
+      catch { get().toast("Could not update the task. It was not changed.", true); void get().refreshStatus(); return; }
+      await get().refreshDash();
+    },
     addNote: async (t) => { await api("/api/notes", { method: "POST", json: { text: t } }); await get().refreshDash(); void get().loadMemory(); },
-    addReminder: async (t, minutes) => { const r = await api<{ message: string }>("/api/reminders", { method: "POST", json: { text: t, minutes } }); get().toast(r.message); await get().refreshDash(); },
+    addReminder: async (t, minutes) => {
+      // Asked here, from the user's own action, and not when the page loads.
+      if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission();
+      const r = await api<{ message: string }>("/api/reminders", { method: "POST", json: { text: t, minutes } }); get().toast(r.message); await get().refreshDash(); },
 
     toggleMic: async () => {
       voice.unlock();
@@ -378,8 +449,8 @@ export const useStore = create<State>((set, get) => {
       set({ ui: "idle", voiceStatus: st || get().voiceStatus });
     },
     connectGoogle: async () => {
-      try { const d = await api<{ url?: string; detail?: string }>("/api/google/start"); if (d.url) location.href = d.url; else get().toast(d.detail || "Google setup is incomplete."); }
-      catch (e: any) { get().toast(e?.message || "Could not start Google sign-in."); }
+      try { const d = await api<{ url?: string; detail?: string }>("/api/google/start"); if (d.url) location.href = d.url; else get().toast(d.detail || "Google setup is incomplete.", true); }
+      catch (e: any) { get().toast(e?.message || "Could not start Google sign-in.", true); }
     },
   };
 });

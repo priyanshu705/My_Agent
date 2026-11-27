@@ -30,16 +30,19 @@
   --danger-solid: 199 59 59;  /* destructive button fill, white text 5.1:1 */
   --shadow: 17 24 39;
   --focus: 88 86 214;
+  --control: 132 141 160;     /* #848DA0 borders that identify a control (3:1 on page and card) */
+  --orb-deep: 60 58 170;      /* shadow side of the voice orb */
+  --orb-shine: 255 255 255;   /* highlight of the voice orb */
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: 11 16 32; --card: 20 27 45; --border: 38 48 74; --text: 229 231 235; --muted: 154 166 188;
   --sidebar: 8 12 24; --sidebar-2: 30 39 62; --sidebar-text: 203 213 225; --sidebar-muted: 148 163 184;
-  --primary: 88 86 214; --primary-hover: 106 104 228; --primary-soft: 33 34 74; --primary-text: 139 137 240;
+  --primary: 88 86 214; --primary-hover: 100 98 224; --primary-soft: 33 34 74; --primary-text: 139 137 240;
   --success: 52 211 153; --success-text: 52 211 153; --success-soft: 16 52 42;
   --warning: 245 180 85; --warning-text: 245 180 85; --warning-soft: 58 42 16;
   --danger: 248 113 113; --danger-text: 248 113 113; --danger-soft: 62 24 28; --danger-solid: 199 59 59;
-  --shadow: 0 0 0; --focus: 165 163 255;
+  --shadow: 0 0 0; --focus: 165 163 255; --control: 105 116 144;
 }
 
 html, body { height: 100%; }

@@ -4,7 +4,7 @@ import { Mic, MicOff, Volume2, VolumeX, Square, Ear } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { voice } from "@/lib/voice";
 import Orb, { ORB_LABEL, useOrbState } from "./Orb";
-import { Badge, Button, Switch, cn } from "./ui";
+import { Badge, Button, Switch, cn, useMedia } from "./ui";
 
 /** Live level bars from the real audio level (mic while listening, speech while speaking). Flat when nothing is active. */
 export function Wave({ active, width = 160, height = 28 }: { active: boolean; width?: number; height?: number }) {
@@ -42,11 +42,12 @@ export default function VoicePanel({ variant = "bar" }: { variant?: "hero" | "ba
   const st = useOrbState(); const listening = ui === "listening"; const speaking = ui === "speaking";
   const canListen = voice.canListen; const phrase = settings.wakeWord || cfg.wake_word || "hey agent";
   const hero = variant === "hero";
+  const wide = useMedia("(min-width: 640px)", true);
   const sub = listening ? "Microphone is on — speak now" : speaking ? "Playing the reply" : st === "processing" ? "Working on it…" : st === "wake" ? `Say “${phrase}”` : voiceIssue ? "" : canListen ? "Tap the mic to talk" : "Voice input needs Chrome or Edge";
   return (
     <section aria-label="Voice assistant" className={cn("border border-line bg-card shadow-card", hero ? "mx-auto w-full max-w-md rounded-2xl p-5 text-center" : "rounded-2xl px-3 py-2.5")}>
       <div className={cn(hero ? "flex flex-col items-center gap-3" : "flex flex-wrap items-center gap-3")}>
-        <Orb size={hero ? 148 : 56} onClick={() => void toggleMic()} label={listening ? "Stop listening" : "Start listening"} />
+        <Orb size={hero ? (wide ? 148 : 104) : 56} onClick={() => void toggleMic()} label={listening ? "Stop listening" : "Start listening"} />
         <div className={cn("min-w-0", hero ? "" : "flex-1")}>
           <p className="text-sm font-semibold" data-testid="orb-state">{ORB_LABEL[st]}</p>
           {sub && <p className="text-xs text-muted">{sub}</p>}
@@ -54,11 +55,12 @@ export default function VoicePanel({ variant = "bar" }: { variant?: "hero" | "ba
         </div>
         {hero && (listening || speaking) && <Wave active width={180} height={28} />}
         <div className={cn("flex items-center gap-1", hero ? "justify-center" : "ml-auto")}>
-          <Button variant={listening ? "danger" : "primary"} size="sm" icon={listening ? MicOff : Mic} onClick={() => void toggleMic()} disabled={!canListen && !listening} aria-pressed={listening}>
+          {/* On phones the orb and the composer microphone are enough; "Stop" still appears while listening. */}
+          <Button variant={listening ? "danger" : "primary"} size="sm" icon={listening ? MicOff : Mic} onClick={() => void toggleMic()} disabled={!canListen && !listening} className={listening ? undefined : "hidden sm:inline-flex"}>
             {listening ? "Stop" : "Talk"}
           </Button>
           {speaking && <Button size="sm" icon={Square} onClick={() => { voice.stop(); set({ ui: "idle" }); }}>Stop audio</Button>}
-          <Button size="sm" icon={settings.speak ? Volume2 : VolumeX} aria-pressed={!settings.speak}
+          <Button size="sm" icon={settings.speak ? Volume2 : VolumeX}
             onClick={() => { setSettings({ speak: !settings.speak }); if (settings.speak) { voice.stop(); set({ ui: "idle" }); } }}
             aria-label={settings.speak ? "Mute voice replies" : "Unmute voice replies"}>{hero ? (settings.speak ? "Mute" : "Unmute") : null}</Button>
         </div>

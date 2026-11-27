@@ -4,6 +4,7 @@ import { Bell, Brain, Check, Clock, ListChecks, Plus, Search, StickyNote } from 
 import { useStore } from "@/lib/store";
 import { fmtDate } from "@/lib/activity";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, cn } from "./ui";
+import ReminderWhen, { DEFAULT_WHEN, minutesFor, type When } from "./ReminderWhen";
 
 function SearchBox({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   return (
@@ -11,16 +12,16 @@ function SearchBox({ value, onChange, label }: { value: string; onChange: (v: st
       <Input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={label} aria-label={label} className="pl-9" /></div>
   );
 }
-function AddForm({ label, placeholder, onAdd, children, multiline }: { label: string; placeholder: string; onAdd: (t: string) => Promise<void> | void; children?: React.ReactNode; multiline?: boolean }) {
+function AddForm({ label, placeholder, onAdd, children, multiline, disabled }: { label: string; placeholder: string; onAdd: (t: string) => Promise<void> | void; children?: React.ReactNode; multiline?: boolean; disabled?: boolean }) {
   const [v, setV] = useState(""); const [busy, setBusy] = useState(false); const toast = useStore((s) => s.toast);
-  const submit = async () => { const t = v.trim(); if (!t || busy) return; setBusy(true); try { await onAdd(t); setV(""); } catch (e: any) { toast(e?.message || "Could not save."); } finally { setBusy(false); } };
+  const submit = async () => { const t = v.trim(); if (!t || busy || disabled) return; setBusy(true); try { await onAdd(t); setV(""); } catch (e: any) { toast(e?.message || "Could not save.", true); } finally { setBusy(false); } };
   return (
     <form onSubmit={(e) => { e.preventDefault(); void submit(); }} className="flex flex-col gap-2 sm:flex-row sm:items-start">
       {multiline
-        ? <textarea value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={label} maxLength={1000} rows={2} className="min-h-[44px] w-full flex-1 rounded-lg border border-line bg-card px-3 py-2.5 text-sm outline-none placeholder:text-muted focus:border-primary" onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void submit(); }} />
+        ? <textarea value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={label} maxLength={1000} rows={2} className="min-h-[44px] w-full flex-1 rounded-lg border border-control bg-card px-3 py-2.5 text-sm placeholder:text-muted focus:border-primary"onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void submit(); }} />
         : <Input value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={label} maxLength={500} className="flex-1" />}
       {children}
-      <Button type="submit" variant="primary" icon={Plus} loading={busy} disabled={!v.trim()}>Add</Button>
+      <Button type="submit" variant="primary" icon={Plus} loading={busy} disabled={!v.trim() || disabled}>Add</Button>
     </form>
   );
 }
@@ -57,8 +58,9 @@ export function Tasks() {
       {list.length === 0 ? <Card><EmptyState icon={ListChecks} title={tab === "pending" ? "No pending tasks" : "Nothing completed yet"} hint={tab === "pending" ? "Add a task above or ask the assistant." : "Completed tasks show up here."} /></Card> : (
         <Card as="div" className="divide-y divide-line">{list.map((t) => (
           <div key={t.i} className="flex items-start gap-3 px-4 py-3">
+            {/* 44 px target around a 32 px box */}
             <button type="button" role="checkbox" aria-checked={t.done} aria-label={`${t.done ? "Mark pending" : "Mark complete"}: ${t.task}`} onClick={() => void toggleTodo(t.i)}
-              className={cn("mt-0 grid h-8 w-8 shrink-0 place-items-center rounded-md border", t.done ? "border-primary bg-primary text-white" : "border-muted/60 bg-card")}>{t.done && <Check size={15} aria-hidden />}</button>
+              className="-m-1.5 grid h-11 w-11 shrink-0 place-items-center rounded-md"><span className={cn("grid h-8 w-8 place-items-center rounded-md border", t.done ? "border-primary bg-primary text-white" : "border-control bg-card")}>{t.done && <Check size={15} aria-hidden />}</span></button>
             <div className="min-w-0 flex-1"><p className={cn("break-words text-sm", t.done && "text-muted line-through")}>{t.task}</p><p className="text-xs text-muted">{t.at ? `Created ${fmtDate(t.at)}` : ""}</p></div>
           </div>))}</Card>)}
       <p className="mt-3 text-xs text-muted">Due dates are not supported by the backend yet, so tasks only show when they were created.</p>
@@ -67,7 +69,7 @@ export function Tasks() {
 }
 
 export function Reminders() {
-  const { dash, addReminder } = useStore(); const [mins, setMins] = useState(30);
+  const { dash, addReminder } = useStore(); const [whenSet, setWhen] = useState<When>(DEFAULT_WHEN);
   const now = Date.now(); const t = (r: { due: string }) => new Date(r.due).getTime();
   const upcoming = dash.reminders.filter((r) => t(r) > now), due = dash.reminders.filter((r) => !(t(r) > now));
   const when = (r: { due: string }) => isNaN(t(r)) ? r.due : new Date(t(r)).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -77,9 +79,9 @@ export function Reminders() {
   return (
     <div>
       <PageHeader title="Reminders" subtitle={`${upcoming.length} upcoming · ${due.length} due`} />
-      <Card className="mb-4 p-4"><AddForm label="New reminder" placeholder="Remind me to…" onAdd={(txt) => addReminder(txt, Math.max(1, mins))}>
-        <label className="flex items-center gap-2 text-sm"><span className="sr-only">Minutes from now</span><Input type="number" min={1} max={10080} value={mins} onChange={(e) => setMins(Number(e.target.value))} className="w-24" aria-label="Minutes from now" /><span className="text-muted">min</span></label>
-      </AddForm></Card>
+      <Card className="mb-4 space-y-3 p-4"><AddForm label="New reminder" placeholder="Remind me to…" disabled={minutesFor(whenSet) === null}
+        onAdd={async (txt) => { const mins = minutesFor(whenSet); if (mins !== null) await addReminder(txt, mins); }} />
+        <ReminderWhen id="rem-when" value={whenSet} onChange={setWhen} /></Card>
       {due.length > 0 && <><h2 className="mb-2 text-sm font-semibold">Due now</h2><Card as="div" className="mb-5"><ul className="divide-y divide-line">{due.map((r, i) => <Row key={i} r={r} tone="warning" />)}</ul></Card></>}
       <h2 className="mb-2 text-sm font-semibold">Upcoming</h2>
       {upcoming.length === 0 ? <Card><EmptyState icon={Bell} title="No upcoming reminders" hint="Add one above, or say “10 minute baad yaad dilana”." /></Card> : <Card as="div"><ul className="divide-y divide-line">{upcoming.map((r, i) => <Row key={i} r={r} tone="info" />)}</ul></Card>}

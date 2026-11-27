@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { Menu, Mic, MicOff } from "lucide-react";
+import { MotionConfig } from "framer-motion";
 import { useStore } from "@/lib/store";
 import { assistantStatus } from "@/lib/activity";
 import { voice } from "@/lib/voice";
@@ -13,7 +14,7 @@ import Automation from "./Automation";
 import { Notes, Tasks, Reminders, MemoryView } from "./Productivity";
 import Integrations from "./Integrations";
 import Settings from "./Settings";
-import { Badge, IconButton, cn } from "./ui";
+import { Badge, IconButton, OfflineBanner, cn } from "./ui";
 
 export function useStatus() {
   const { online, busy, activity, msgs } = useStore();
@@ -28,6 +29,7 @@ export default function Shell() {
   useEffect(() => { if (first.current) { first.current = false; return; } main.current?.focus({ preventScroll: true }); }, [view]);
   const listening = ui === "listening";
   return (
+    <MotionConfig reducedMotion="user">
     <div className="flex h-dvh overflow-hidden bg-bg">
       <a href="#main" className="skip">Skip to content</a>
       <Sidebar />
@@ -39,8 +41,10 @@ export default function Shell() {
           <Badge tone={!online ? "danger" : mode === "local" || pcOnline ? "success" : "neutral"} className="hidden md:inline-flex">
             {!online ? "Backend offline" : mode === "local" ? "PC connected" : pcOnline ? "PC online" : "PC offline"}
           </Badge>
-          <IconButton label={listening ? "Stop listening" : "Start listening"} icon={listening ? MicOff : Mic} active={listening} onClick={() => void toggleMic()} disabled={!voice.canListen && !listening} className="sm:hidden" />
+          {/* Chat has its own microphone in the composer, so the top bar one is only for the other views. */}
+          {view !== "chat" && <IconButton label={listening ? "Stop listening" : "Start listening"} icon={listening ? MicOff : Mic} active={listening} onClick={() => void toggleMic()} disabled={!voice.canListen && !listening} className="sm:hidden" />}
         </header>
+        {!online && <OfflineBanner />}
         <main id="main" ref={main} tabIndex={-1} className={cn("min-h-0 flex-1 outline-none", view === "chat" ? "overflow-hidden" : "overflow-y-auto")}>
           <div key={view} className={cn("animate-rise", view === "chat" ? "h-full" : "mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-7")}>
             {view === "overview" && <Overview />}
@@ -60,5 +64,6 @@ export default function Shell() {
       <ConfirmDialog />
       <Toasts />
     </div>
+    </MotionConfig>
   );
 }

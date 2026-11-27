@@ -34,11 +34,24 @@ export default function Settings() {
   const [wipe, setWipe] = useState(false); const [reset, setReset] = useState(false);
   const on = items.filter((i) => i.state.tone === "success").length;
   const themes: [Theme, string, typeof Sun][] = [["light", "Light", Sun], ["dark", "Dark", Moon], ["system", "System", Monitor]];
+  // Marks the section being read in the side navigation: the last heading that has reached the top of the view.
+  const [section, setSection] = useState<string>(SECTIONS[0]);
+  useEffect(() => {
+    const box = document.getElementById("main"); if (!box) return;
+    const onScroll = () => {
+      const top = box.getBoundingClientRect().top + 140;
+      const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+      const seen = SECTIONS.filter((s) => { const h = document.getElementById(slug(s)); return !!h && (atEnd || h.getBoundingClientRect().top <= top); });
+      setSection(seen[seen.length - 1] ?? SECTIONS[0]);
+    };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    return () => box.removeEventListener("scroll", onScroll);
+  }, []);
   return (
     <div>
       <PageHeader title="Settings" subtitle="Preferences are saved in this browser. Server options live in the .env file on the PC." />
       <div className="grid gap-5 lg:grid-cols-[200px,1fr]">
-        <nav aria-label="Settings sections" className="hidden lg:block"><ul className="sticky top-4 space-y-0.5">{SECTIONS.map((s) => <li key={s}><a href={`#${slug(s)}`} className="block min-h-[40px] [@media(pointer:coarse)]:min-h-[44px] rounded-lg px-3 py-2 text-sm text-muted hover:bg-primary-soft hover:text-primary-text">{s}</a></li>)}</ul></nav>
+        <nav aria-label="Settings sections" className="hidden lg:block"><ul className="sticky top-4 space-y-0.5">{SECTIONS.map((s) => <li key={s}><a href={`#${slug(s)}`} onClick={() => setSection(s)} aria-current={section === s ? "location" : undefined} className={cn("block min-h-[40px] [@media(pointer:coarse)]:min-h-[44px] rounded-lg px-3 py-2 text-sm hover:bg-primary-soft hover:text-primary-text", section === s ? "bg-primary-soft font-medium text-primary-text" : "text-muted")}>{s}</a></li>)}</ul></nav>
         <div className="space-y-5">
           <Section title="General" intro="How the assistant behaves day to day.">
             <Field label="Hands-free conversation" hint="After it answers, keep listening for your next sentence."><Live /><Switch on={settings.convo} onChange={(v) => setSettings({ convo: v })} label="Hands-free conversation" /></Field>
@@ -53,14 +66,14 @@ export default function Settings() {
 
           <Section title="Language" intro="The assistant replies in the language you write or speak.">
             <Field label="Microphone language" hint="Language the browser listens for." htmlFor="s-lang"><Live />
-              <select id="s-lang" value={settings.srLang} onChange={(e) => setSettings({ srLang: e.target.value })} className="min-h-[44px] rounded-lg border border-line bg-card px-3 text-sm">{[["en-IN", "English (India)"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["hi-IN", "Hindi"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+              <select id="s-lang" value={settings.srLang} onChange={(e) => setSettings({ srLang: e.target.value })} className="min-h-[44px] rounded-lg border border-control bg-card px-3 text-sm">{[["en-IN", "English (India)"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["hi-IN", "Hindi"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
             <Field label="Default recognition language" hint="RECOGNITION_LANG in .env."><Restart /><span className="text-sm">{cfg.recognition_lang || "en-IN"}</span></Field>
           </Section>
 
           <Section title="Voice">
             <Field label="Speak replies aloud"><Live /><Switch on={settings.speak} onChange={(v) => { setSettings({ speak: v }); if (!v) voice.stop(); }} label="Speak replies aloud" /></Field>
-            <Field label="Voice" htmlFor="s-voice"><Live /><select id="s-voice" value={settings.voice} onChange={(e) => setSettings({ voice: e.target.value })} className="min-h-[44px] max-w-[220px] rounded-lg border border-line bg-card px-3 text-sm">{CLOUD_VOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-              <Button size="sm" icon={Play} onClick={() => void playSample()} aria-label="Play a voice sample">Test</Button></Field>
+            <Field label="Voice" htmlFor="s-voice"><Live /><select id="s-voice" value={settings.voice} onChange={(e) => setSettings({ voice: e.target.value })} className="min-h-[44px] max-w-[220px] rounded-lg border border-control bg-card px-3 text-sm">{CLOUD_VOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              <Button size="sm" icon={Play} onClick={() => void playSample()} aria-label="Test voice (play a sample)">Test</Button></Field>
             <Field label={`Speed · ${settings.rate.toFixed(2)}×`} htmlFor="s-rate"><Live /><input id="s-rate" type="range" min={0.8} max={1.3} step={0.05} value={settings.rate} onChange={(e) => setSettings({ rate: +e.target.value })} className="h-11 w-40 accent-primary" /></Field>
             <Field label="Offline Hindi voice" hint="KOKORO_TTS=1 in .env."><Restart /><Badge tone={cfg.local_tts ? "success" : "neutral"}>{cfg.local_tts ? "Enabled" : "Disabled"}</Badge></Field>
           </Section>

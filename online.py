@@ -4,7 +4,7 @@
     python online.py --no-browser start silently (used by autostart)
 
 The agent itself only listens on 127.0.0.1. The tunnel is the only way in, and every request
-from outside must log in with ACCESS_PIN first. Risky actions still ask haan/na.
+from outside must log in with ACCESS_PIN first. Risky actions still ask you to confirm.
 """
 
 import os
